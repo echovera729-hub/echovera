@@ -6,6 +6,16 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#09090f">
+<meta name="description" content="EchoVera — Connect, Share, Echo. Real-time social chat with live GPS tracking.">
+<meta name="application-name" content="EchoVera">
+<meta name="apple-mobile-web-app-title" content="EchoVera">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="120x120" href="icons/icon-120.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
 <title>EchoVera</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -325,6 +335,22 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
 .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text3);padding:40px;text-align:center}
 .empty-state span{font-size:52px}
 .empty-state p{font-size:14px;line-height:1.6}
+
+/* PWA INSTALL BANNER */
+#pwa-banner{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));left:12px;right:12px;background:linear-gradient(135deg,rgba(20,14,40,.98),rgba(28,14,50,.98));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(139,92,246,.35);border-radius:20px;padding:16px;z-index:1000;display:none;box-shadow:0 8px 32px rgba(0,0,0,.6);animation:slideUp .4s cubic-bezier(.4,0,.2,1)}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+#pwa-banner.show{display:flex;align-items:center;gap:12px}
+.pwa-ico{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#8b5cf6,#ec4899);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+.pwa-txt{flex:1;min-width:0}
+.pwa-txt strong{display:block;font-size:15px;font-weight:700;margin-bottom:2px}
+.pwa-txt span{font-size:12px;color:var(--text2);line-height:1.4;display:block}
+.pwa-btn{background:linear-gradient(135deg,var(--accent),#7c3aed);border:none;border-radius:12px;padding:10px 16px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.pwa-btn:active{opacity:.85}
+.pwa-dismiss{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:4px}
+
+/* OFFLINE INDICATOR */
+#offline-bar{position:fixed;top:0;left:0;right:0;background:rgba(245,158,11,.95);color:#000;font-size:13px;font-weight:700;text-align:center;padding:calc(env(safe-area-inset-top,0px) + 8px) 16px 8px;z-index:9998;display:none;backdrop-filter:blur(10px)}
+#offline-bar.show{display:block}
 </style>
 </head>
 <body>
@@ -537,6 +563,20 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
 
 <div id="ctxm"></div>
 <div id="toasts"></div>
+
+<!-- OFFLINE BAR -->
+<div id="offline-bar">📡 You're offline — some features may be limited</div>
+
+<!-- PWA INSTALL BANNER -->
+<div id="pwa-banner">
+  <div class="pwa-ico">✦</div>
+  <div class="pwa-txt">
+    <strong>Install EchoVera</strong>
+    <span>Add to your home screen for the full app experience — works offline too!</span>
+  </div>
+  <button class="pwa-btn" onclick="installPWA()">Install</button>
+  <button class="pwa-dismiss" onclick="dismissPWA()">✕</button>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -1521,6 +1561,78 @@ document.body.addEventListener('touchmove',e=>{if(e.target===document.body)e.pre
 // Sign out on page unload — mark offline
 window.addEventListener('beforeunload',()=>{
   if(CU) sb.from('users').update({status:'offline'}).eq('id',CU.id)
+})
+
+// ═══════════════════════════════════════
+// PWA — SERVICE WORKER + INSTALL
+// ═══════════════════════════════════════
+let deferredPrompt = null
+
+// Register service worker
+if('serviceWorker' in navigator){
+  window.addEventListener('load', async ()=>{
+    try{
+      const reg = await navigator.serviceWorker.register('sw.js')
+      console.log('[EchoVera] SW registered:', reg.scope)
+    }catch(err){
+      console.log('[EchoVera] SW registration failed:', err)
+    }
+  })
+}
+
+// Catch the install prompt (Android/Chrome)
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault()
+  deferredPrompt = e
+  // Show banner after 3 seconds if not dismissed before
+  const dismissed = localStorage.getItem('pwa-dismissed')
+  if(!dismissed){
+    setTimeout(()=>showPWABanner(), 3000)
+  }
+})
+
+// After successful install
+window.addEventListener('appinstalled', ()=>{
+  hidePWABanner()
+  deferredPrompt = null
+  toast('EchoVera installed! 🎉 Find it on your home screen','ok')
+})
+
+function showPWABanner(){
+  const b = document.getElementById('pwa-banner')
+  if(b) b.classList.add('show')
+}
+function hidePWABanner(){
+  const b = document.getElementById('pwa-banner')
+  if(b) b.classList.remove('show')
+}
+async function installPWA(){
+  if(deferredPrompt){
+    deferredPrompt.prompt()
+    const {outcome} = await deferredPrompt.userChoice
+    if(outcome==='accepted') toast('Installing EchoVera… 📲','ok')
+    deferredPrompt = null
+    hidePWABanner()
+  } else {
+    // iOS fallback — show instructions
+    toast('On iPhone: tap Share → Add to Home Screen','info')
+  }
+}
+function dismissPWA(){
+  hidePWABanner()
+  localStorage.setItem('pwa-dismissed','1')
+}
+
+// Online/offline detection
+window.addEventListener('offline', ()=>{
+  const b = document.getElementById('offline-bar')
+  if(b) b.classList.add('show')
+  toast('You\'re offline 📡','info')
+})
+window.addEventListener('online', ()=>{
+  const b = document.getElementById('offline-bar')
+  if(b) b.classList.remove('show')
+  toast('Back online! ✅','ok')
 })
 </script>
 </body>

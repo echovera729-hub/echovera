@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EchoVera Icon Generator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#09090f;color:#f4f0ff;font-family:'Segoe UI',system-ui,sans-serif;padding:40px 20px;min-height:100vh}
+.wrap{max-width:640px;margin:0 auto}
+h1{font-size:28px;font-weight:800;background:linear-gradient(135deg,#c4b5fd,#8b5cf6,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+p{color:#9d9bc0;font-size:14px;margin-bottom:32px;line-height:1.6}
+.preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:16px;margin-bottom:32px}
+.icon-card{background:#111118;border:1px solid #1e1e2e;border-radius:16px;padding:16px;text-align:center;cursor:pointer;transition:border-color .2s}
+.icon-card:hover{border-color:#8b5cf6}
+.icon-card canvas{border-radius:22%;display:block;margin:0 auto 8px}
+.icon-card .sz{font-size:11px;color:#4d4b6b;font-weight:600}
+.icon-card .dl{font-size:12px;color:#8b5cf6;font-weight:700;margin-top:4px}
+.btn{display:inline-block;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;border-radius:12px;padding:14px 28px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-right:10px;margin-bottom:10px;font-family:inherit}
+.btn:hover{opacity:.9}
+.btn-o{background:transparent;border:1.5px solid #2e2e45;color:#9d9bc0}
+.btn-o:hover{border-color:#8b5cf6;color:#8b5cf6}
+.notice{background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:12px;padding:14px 16px;font-size:13px;color:#a78bfa;line-height:1.7;margin-bottom:24px}
+.step{background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:16px 20px;margin-bottom:12px;font-size:14px;line-height:1.7;color:#9d9bc0}
+.step strong{color:#f4f0ff;display:block;margin-bottom:4px}
+code{background:#18181f;border:1px solid #2e2e45;border-radius:5px;padding:1px 6px;font-size:13px;color:#c4b5fd}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>EchoVera Icon Generator</h1>
+  <p>This tool generates all the icon sizes your PWA needs. Click any icon to download it, or use "Download All" to get them one by one.</p>
+
+  <div class="notice">
+    💡 <strong>How to use:</strong> Click <strong>Generate All Icons</strong> below, then click each icon to download it. Save them all into a folder called <code>icons</code> inside your project folder alongside <code>index.html</code>.
+  </div>
+
+  <button class="btn" onclick="generateAll()">✨ Generate All Icons</button>
+  <button class="btn btn-o" onclick="downloadAll()">⬇️ Download All</button>
+
+  <div class="preview" id="preview"></div>
+
+  <h2 style="font-size:18px;font-weight:700;margin-bottom:16px;margin-top:8px">📁 How to organize your files</h2>
+
+  <div class="step"><strong>Your project folder should look like this:</strong>
+echovera/<br>
+├── index.html &nbsp;&nbsp;&nbsp;← your app<br>
+├── manifest.json &nbsp;← PWA manifest<br>
+├── sw.js &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← service worker<br>
+└── icons/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← create this folder<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-72.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-96.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-120.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-128.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-144.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-152.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-180.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-192.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-256.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;├── icon-384.png<br>
+&nbsp;&nbsp;&nbsp;&nbsp;└── icon-512.png</div>
+
+  <div class="step"><strong>After saving all icons:</strong>
+1. Upload everything to GitHub (index.html, manifest.json, sw.js, and the icons/ folder)<br>
+2. Vercel will automatically redeploy<br>
+3. Open your app on mobile → your browser will show an "Add to Home Screen" prompt!</div>
+
+  <div class="step"><strong>On iPhone (iOS):</strong>
+Tap the <strong>Share</strong> button (box with arrow) → scroll down → tap <strong>"Add to Home Screen"</strong> → tap <strong>Add</strong>. EchoVera will appear on your home screen like a real app!</div>
+
+  <div class="step"><strong>On Android (Chrome):</strong>
+A banner will automatically appear at the bottom of your screen saying "Add EchoVera to Home screen". Tap <strong>Install</strong>. Or tap the 3-dot menu → <strong>"Add to Home screen"</strong>.</div>
+</div>
+
+<script>
+const SIZES = [72, 96, 120, 128, 144, 152, 180, 192, 256, 384, 512]
+const canvases = {}
+
+function drawIcon(size) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const r = size * 0.22 // corner radius
+
+  // Background rounded rect
+  ctx.beginPath()
+  ctx.moveTo(r, 0)
+  ctx.lineTo(size - r, 0)
+  ctx.quadraticCurveTo(size, 0, size, r)
+  ctx.lineTo(size, size - r)
+  ctx.quadraticCurveTo(size, size, size - r, size)
+  ctx.lineTo(r, size)
+  ctx.quadraticCurveTo(0, size, 0, size - r)
+  ctx.lineTo(0, r)
+  ctx.quadraticCurveTo(0, 0, r, 0)
+  ctx.closePath()
+
+  // Gradient background
+  const grad = ctx.createLinearGradient(0, 0, size, size)
+  grad.addColorStop(0, '#1a0a3e')
+  grad.addColorStop(0.5, '#2d0a5a')
+  grad.addColorStop(1, '#3d0a30')
+  ctx.fillStyle = grad
+  ctx.fill()
+
+  // Inner glow
+  const glow = ctx.createRadialGradient(size*0.35, size*0.35, 0, size*0.5, size*0.5, size*0.7)
+  glow.addColorStop(0, 'rgba(139,92,246,0.35)')
+  glow.addColorStop(0.5, 'rgba(139,92,246,0.12)')
+  glow.addColorStop(1, 'rgba(236,72,153,0.08)')
+  ctx.beginPath()
+  ctx.moveTo(r, 0)
+  ctx.lineTo(size - r, 0)
+  ctx.quadraticCurveTo(size, 0, size, r)
+  ctx.lineTo(size, size - r)
+  ctx.quadraticCurveTo(size, size, size - r, size)
+  ctx.lineTo(r, size)
+  ctx.quadraticCurveTo(0, size, 0, size - r)
+  ctx.lineTo(0, r)
+  ctx.quadraticCurveTo(0, 0, r, 0)
+  ctx.closePath()
+  ctx.fillStyle = glow
+  ctx.fill()
+
+  // ✦ symbol (stylized star/diamond)
+  const cx = size * 0.5
+  const cy = size * 0.46
+  const fs = size * 0.48
+
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  // Text gradient
+  const tgrad = ctx.createLinearGradient(cx - fs/2, cy - fs/2, cx + fs/2, cy + fs/2)
+  tgrad.addColorStop(0, '#e9d5ff')
+  tgrad.addColorStop(0.4, '#a78bfa')
+  tgrad.addColorStop(1, '#f472b6')
+  ctx.fillStyle = tgrad
+
+  ctx.font = `${fs}px serif`
+  ctx.fillText('✦', cx, cy)
+  ctx.restore()
+
+  // App name below symbol
+  const nameFontSize = size * 0.115
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.font = `700 ${nameFontSize}px -apple-system,system-ui,sans-serif`
+  const ngrad = ctx.createLinearGradient(0, 0, size, 0)
+  ngrad.addColorStop(0, '#c4b5fd')
+  ngrad.addColorStop(1, '#f472b6')
+  ctx.fillStyle = ngrad
+  ctx.fillText('EchoVera', cx, size * 0.82)
+  ctx.restore()
+
+  return canvas
+}
+
+function generateAll() {
+  const preview = document.getElementById('preview')
+  preview.innerHTML = ''
+  SIZES.forEach(size => {
+    const canvas = drawIcon(size)
+    canvases[size] = canvas
+
+    // Display card
+    const displaySize = Math.min(size, 80)
+    const displayCanvas = drawIcon(displaySize)
+
+    const card = document.createElement('div')
+    card.className = 'icon-card'
+    card.title = `Click to download icon-${size}.png`
+    card.onclick = () => downloadIcon(size)
+    card.innerHTML = `<div class="sz">${size}×${size}</div><div class="dl">⬇ Download</div>`
+    card.insertBefore(displayCanvas, card.firstChild)
+    preview.appendChild(card)
+  })
+}
+
+function downloadIcon(size) {
+  const canvas = canvases[size] || drawIcon(size)
+  canvas.toBlob(blob => {
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `icon-${size}.png`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }, 'image/png')
+}
+
+async function downloadAll() {
+  if (Object.keys(canvases).length === 0) generateAll()
+  for (let i = 0; i < SIZES.length; i++) {
+    await new Promise(resolve => setTimeout(resolve, 300))
+    downloadIcon(SIZES[i])
+  }
+}
+
+// Auto-generate on load
+window.addEventListener('load', generateAll)
+</script>
+</body>
+</html>
