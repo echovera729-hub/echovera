@@ -2,87 +2,184 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="theme-color" content="#8b5cf6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="EchoVera">
 <link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
 <title>Install EchoVera</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#09090f;color:#f4f0ff;
-  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
-  background-image:radial-gradient(ellipse at 50% 30%,rgba(139,92,246,.2) 0%,transparent 60%)}
-.card{background:#111118;border:1px solid #2e2e45;border-radius:24px;padding:32px 28px;
-  max-width:400px;width:100%;text-align:center}
-.logo{font-size:72px;margin-bottom:4px}
-h1{font-size:28px;font-weight:800;letter-spacing:-1px;
+:root{--accent:#8b5cf6;--pink:#ec4899}
+body{font-family:-apple-system,'Segoe UI',system-ui,sans-serif;background:#09090f;color:#f4f0ff;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;background-image:radial-gradient(ellipse at 50% 20%,rgba(139,92,246,.2) 0%,transparent 60%)}
+.card{background:#111118;border:1px solid #2e2e45;border-radius:24px;padding:32px 24px;
+  max-width:420px;width:100%;text-align:center}
+.icon{width:88px;height:88px;border-radius:24px;margin:0 auto 16px;display:block}
+h1{font-size:26px;font-weight:800;letter-spacing:-1px;
   background:linear-gradient(135deg,#c4b5fd,#8b5cf6,#ec4899);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
-p{color:#9d9bc0;font-size:15px;line-height:1.6;margin-bottom:28px}
+.sub{color:#9d9bc0;font-size:15px;line-height:1.6;margin-bottom:28px}
 .btn{width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;
   border-radius:16px;padding:16px;color:#fff;font-size:17px;font-weight:700;
-  cursor:pointer;box-shadow:0 8px 24px rgba(139,92,246,.4);margin-bottom:12px;
-  font-family:inherit;transition:transform .15s}
+  cursor:pointer;margin-bottom:12px;font-family:inherit;transition:transform .15s;display:block}
 .btn:active{transform:scale(.97)}
-.btn-o{width:100%;background:transparent;border:1.5px solid #2e2e45;border-radius:16px;
-  padding:14px;color:#9d9bc0;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
-.status{font-size:13px;color:#9d9bc0;margin-top:20px;padding:12px;
-  background:#18181f;border-radius:12px;line-height:1.6}
-.status.ok{color:#22c55e;border:1px solid rgba(34,197,94,.2)}
-.status.warn{color:#f59e0b;border:1px solid rgba(245,158,11,.2)}
+.btn-ghost{width:100%;background:transparent;border:1.5px solid #2e2e45;border-radius:16px;
+  padding:14px;color:#9d9bc0;font-size:15px;font-weight:600;cursor:pointer;
+  font-family:inherit;display:block;text-decoration:none;text-align:center}
+.status{font-size:13px;margin-top:20px;padding:14px 16px;border-radius:14px;line-height:1.7;
+  background:#18181f;border:1px solid #2e2e45;color:#9d9bc0;text-align:left}
+.status.ok{color:#22c55e;border-color:rgba(34,197,94,.25);background:rgba(34,197,94,.06)}
+.status.warn{color:#f59e0b;border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.06)}
+.status.info{color:#a78bfa;border-color:rgba(139,92,246,.25);background:rgba(139,92,246,.06)}
+.steps{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;text-align:left}
+.step{display:flex;align-items:flex-start;gap:12px;background:#18181f;
+  border-radius:14px;padding:14px;border:1px solid #1e1e2e}
+.step-n{min-width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-weight:800;
+  color:#a78bfa;font-size:13px;margin-top:1px}
+.step-txt{font-size:14px;color:#f4f0ff;line-height:1.5}
+.note{font-size:12px;color:#9d9bc0;margin-top:4px}
+.divider{height:1px;background:#1e1e2e;margin:20px 0}
+.platform-label{font-size:11px;font-weight:700;color:#4d4b6b;text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:16px}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.bounce{display:inline-block;animation:bounce 1.2s ease-in-out infinite}
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="logo">✦</div>
+<div class="card" id="card">
+  <img src="/icons/icon-180.png" class="icon" onerror="this.outerHTML='<div style=\'font-size:64px;margin-bottom:16px\'>✦</div>'">
   <h1>EchoVera</h1>
-  <p>Install EchoVera on your device for the full app experience — live GPS tracking, instant messaging, and offline access.</p>
-  <button class="btn" id="install-btn" onclick="doInstall()">📲 Install App</button>
-  <button class="btn-o" onclick="location.href='/'">Open in Browser</button>
-  <div class="status" id="status">Checking install availability…</div>
+  <p class="sub">Install EchoVera on your device for the full experience — live GPS, instant chat, works offline.</p>
+  <div id="content">Detecting your device…</div>
 </div>
+
 <script>
-var prompt = null;
+var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+var isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+var isSafariIOS = (isIOS || isIPad) && /AppleWebKit/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent)
+var isChromeIOS = /CriOS/.test(navigator.userAgent)
+var isAndroid = /Android/.test(navigator.userAgent)
+var isSamsung = /SamsungBrowser/.test(navigator.userAgent)
+var isEdgeA = /EdgA/.test(navigator.userAgent)
+var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+var installPrompt = null
+
 window.addEventListener('beforeinstallprompt', function(e) {
-  e.preventDefault();
-  prompt = e;
-  document.getElementById('status').textContent = '✅ Ready to install — tap Install App above!';
-  document.getElementById('status').className = 'status ok';
-});
-window.addEventListener('appinstalled', function() {
-  document.getElementById('status').textContent = '🎉 Installed! Open EchoVera from your app drawer.';
-  document.getElementById('status').className = 'status ok';
-  document.getElementById('install-btn').disabled = true;
-  document.getElementById('install-btn').textContent = '✅ Installed!';
-});
-async function doInstall() {
-  if (prompt) {
-    prompt.prompt();
-    var result = await prompt.userChoice;
-    prompt = null;
-    if (result.outcome === 'accepted') {
-      document.getElementById('status').textContent = '✅ Installing… check your app drawer!';
-      document.getElementById('status').className = 'status ok';
-    }
-  } else if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-    document.getElementById('status').innerHTML = '📱 iPhone: Open in <strong>Safari</strong> → tap Share ⬆ → Add to Home Screen';
-    document.getElementById('status').className = 'status warn';
+  e.preventDefault()
+  installPrompt = e
+  renderContent()
+})
+
+function renderContent() {
+  var c = document.getElementById('content')
+
+  if (isStandalone) {
+    c.innerHTML = '<div class="status ok">✅ EchoVera is already installed and running as a PWA!<br><br><a href="/" style="color:#22c55e;font-weight:700">Open EchoVera →</a></div>'
+    return
+  }
+
+  if (installPrompt) {
+    // Android Chrome/Edge/Samsung — can do native install
+    var browser = isSamsung ? 'Samsung Internet' : isEdgeA ? 'Edge' : 'Chrome'
+    c.innerHTML = `
+      <div class="status ok" style="margin-bottom:16px">✅ Ready to install in ${browser}!</div>
+      <button class="btn" onclick="doInstall()">📲 Install to App Drawer</button>
+      <a href="/" class="btn-ghost">Open in Browser</a>`
+  } else if (isChromeIOS) {
+    // Chrome on iPhone — can't install, must use Safari
+    c.innerHTML = `
+      <div class="status warn" style="margin-bottom:16px">⚠️ You're using Chrome on iPhone. Apple only allows <strong>Safari</strong> to install apps.</div>
+      <div class="steps">
+        <div class="step"><div class="step-n">1</div><div class="step-txt">Copy this page's link</div></div>
+        <div class="step"><div class="step-n">2</div><div class="step-txt">Open <strong>Safari</strong> and paste the link</div></div>
+        <div class="step"><div class="step-n">3</div><div class="step-txt">Tap Share <span class="bounce">⬆</span> → Add to Home Screen</div></div>
+      </div>
+      <button class="btn" onclick="copyLink()">📋 Copy Link</button>
+      <a href="/" class="btn-ghost">Continue in Chrome</a>`
+  } else if (isSafariIOS) {
+    // Safari on iPhone/iPad — add to home screen
+    c.innerHTML = `
+      <div class="platform-label">iPhone · iPad · Safari</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-txt">
+            Tap the <strong>Share</strong> button <span class="bounce" style="font-size:18px">⬆</span>
+            <div class="note">Found at the bottom of Safari on iPhone, top-right on iPad</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-txt">
+            Scroll down and tap <strong>"Add to Home Screen"</strong> <span style="font-size:16px">＋</span>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-txt">
+            Tap <strong>Add</strong> in the top-right corner
+            <div class="note">EchoVera icon appears on your home screen — opens fullscreen!</div>
+          </div>
+        </div>
+      </div>
+      <div class="status ok">✅ Once added, EchoVera opens fullscreen with no browser bar — just like a native app!</div>`
+  } else if (isAndroid) {
+    // Android but prompt not yet fired — show manual method
+    var browser = isSamsung ? 'Samsung Internet' : isEdgeA ? 'Edge' : 'Chrome'
+    var menu = isSamsung ? '⋮' : isEdgeA ? '…' : '⋮'
+    c.innerHTML = `
+      <div class="status info" style="margin-bottom:16px">💡 If the install button doesn't appear, use the browser menu below.</div>
+      <button class="btn" id="install-btn" onclick="doInstall()">📲 Install App</button>
+      <div class="divider"></div>
+      <div class="platform-label">${browser} on Android — Manual Method</div>
+      <div class="steps">
+        <div class="step"><div class="step-n">1</div><div class="step-txt">Tap <strong>${menu}</strong> in the top-right of your browser</div></div>
+        <div class="step"><div class="step-n">2</div><div class="step-txt">Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong></div></div>
+        <div class="step"><div class="step-n">3</div><div class="step-txt">Tap <strong>Install</strong> — it appears in your app drawer!</div></div>
+      </div>`
   } else {
-    document.getElementById('status').innerHTML = 'Tap ⋮ (browser menu) → <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>';
-    document.getElementById('status').className = 'status warn';
+    // Desktop or other
+    c.innerHTML = `
+      <div class="status info" style="margin-bottom:16px">💡 On desktop Chrome/Edge, click the install icon <strong>⊕</strong> in the address bar.</div>
+      <button class="btn" onclick="doInstall()">Install EchoVera</button>
+      <a href="/" class="btn-ghost">Open in Browser</a>`
   }
 }
-// Check if already installed
-if (window.matchMedia('(display-mode: standalone)').matches) {
-  document.getElementById('status').textContent = '✅ Already installed! This is running as a PWA.';
-  document.getElementById('status').className = 'status ok';
-} else {
-  setTimeout(function() {
-    if (!prompt) {
-      document.getElementById('status').innerHTML = 'If the install button doesn\'t work, tap ⋮ menu → <strong>"Install app"</strong>';
-      document.getElementById('status').className = 'status warn';
+
+async function doInstall() {
+  if (installPrompt) {
+    installPrompt.prompt()
+    var result = await installPrompt.userChoice
+    installPrompt = null
+    if (result.outcome === 'accepted') {
+      document.getElementById('content').innerHTML =
+        '<div class="status ok">🎉 Installing… Check your app drawer in a moment!</div><a href="/" class="btn" style="margin-top:12px;display:block">Open EchoVera</a>'
+    } else {
+      renderContent()
     }
-  }, 3000);
+  } else {
+    renderContent()
+  }
 }
+
+function copyLink() {
+  navigator.clipboard && navigator.clipboard.writeText(location.origin + '/').then(function() {
+    var btn = document.querySelector('.btn')
+    if (btn) { btn.textContent = '✅ Copied! Now open Safari'; btn.style.opacity = '.8' }
+  })
+}
+
+window.addEventListener('appinstalled', function() {
+  document.getElementById('content').innerHTML =
+    '<div class="status ok">🎉 EchoVera installed successfully!<br><br>Find it in your <strong>app drawer</strong> or <strong>home screen</strong>.</div>'
+})
+
+// Render immediately, will update if beforeinstallprompt fires
+renderContent()
 </script>
 </body>
 </html>

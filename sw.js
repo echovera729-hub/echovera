@@ -1,14 +1,14 @@
-// EchoVera Service Worker v3
+// EchoVera Service Worker v4
 // Must pass Chrome PWA installability audit:
 // ✓ Responds with 200 for start_url /
 // ✓ fetch handler present
 // ✓ Correct scope /
 // ✓ HTTPS (enforced by Vercel)
 
-const CACHE_NAME = 'echovera-v3'
-const STATIC_CACHE = 'echovera-static-v3'
-const TILE_CACHE = 'echovera-tiles-v3'
-const CDN_CACHE = 'echovera-cdn-v3'
+const CACHE_NAME = 'echovera-v4'
+const STATIC_CACHE = 'echovera-static-v4'
+const TILE_CACHE = 'echovera-tiles-v4'
+const CDN_CACHE = 'echovera-cdn-v4'
 
 // Core app shell — cached on install
 const APP_SHELL = [
