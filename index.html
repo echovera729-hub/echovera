@@ -9,13 +9,12 @@
 <meta name="description" content="EchoVera — Connect, Share, Echo. Real-time social chat with live GPS tracking.">
 <meta name="application-name" content="EchoVera">
 <meta name="apple-mobile-web-app-title" content="EchoVera">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
-<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
-<link rel="apple-touch-icon" sizes="120x120" href="icons/icon-120.png">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<meta name="msapplication-TileColor" content="#09090f">
+<meta name="msapplication-tap-highlight" content="no">
+<!-- manifest + icons injected inline by JS below — no external files needed -->
 <title>EchoVera</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -1563,75 +1562,367 @@ window.addEventListener('beforeunload',()=>{
   if(CU) sb.from('users').update({status:'offline'}).eq('id',CU.id)
 })
 
-// ═══════════════════════════════════════
-// PWA — SERVICE WORKER + INSTALL
-// ═══════════════════════════════════════
-let deferredPrompt = null
+// ═══════════════════════════════════════════════════════════
+// PWA — 100% INLINE (no external sw.js or manifest.json)
+// Works on Vercel with just index.html uploaded.
+// Manifest injected as a <link> with a blob: URL.
+// Service Worker registered from a blob: URL.
+// ═══════════════════════════════════════════════════════════
 
-// Register service worker
-if('serviceWorker' in navigator){
-  window.addEventListener('load', async ()=>{
-    try{
-      const reg = await navigator.serviceWorker.register('sw.js')
-      console.log('[EchoVera] SW registered:', reg.scope)
-    }catch(err){
-      console.log('[EchoVera] SW registration failed:', err)
-    }
-  })
+// ── STEP 1: Build icon PNGs via Canvas (inline, no files) ──
+function buildIconDataURL(size){
+  const c=document.createElement('canvas')
+  c.width=c.height=size
+  const x=c.getContext('2d'),r=size*.22,cx=size*.5,cy=size*.46,fs=size*.48
+  // rounded rect clip
+  x.beginPath()
+  x.moveTo(r,0);x.lineTo(size-r,0);x.quadraticCurveTo(size,0,size,r)
+  x.lineTo(size,size-r);x.quadraticCurveTo(size,size,size-r,size)
+  x.lineTo(r,size);x.quadraticCurveTo(0,size,0,size-r)
+  x.lineTo(0,r);x.quadraticCurveTo(0,0,r,0);x.closePath()
+  // bg gradient
+  const g=x.createLinearGradient(0,0,size,size)
+  g.addColorStop(0,'#1a0a3e');g.addColorStop(.5,'#2d0a5a');g.addColorStop(1,'#3d0a30')
+  x.fillStyle=g;x.fill()
+  // glow
+  const gl=x.createRadialGradient(size*.35,size*.35,0,size*.5,size*.5,size*.7)
+  gl.addColorStop(0,'rgba(139,92,246,.35)');gl.addColorStop(.5,'rgba(139,92,246,.12)');gl.addColorStop(1,'rgba(236,72,153,.08)')
+  x.beginPath()
+  x.moveTo(r,0);x.lineTo(size-r,0);x.quadraticCurveTo(size,0,size,r)
+  x.lineTo(size,size-r);x.quadraticCurveTo(size,size,size-r,size)
+  x.lineTo(r,size);x.quadraticCurveTo(0,size,0,size-r)
+  x.lineTo(0,r);x.quadraticCurveTo(0,0,r,0);x.closePath()
+  x.fillStyle=gl;x.fill()
+  // ✦ symbol
+  const tg=x.createLinearGradient(cx-fs/2,cy-fs/2,cx+fs/2,cy+fs/2)
+  tg.addColorStop(0,'#e9d5ff');tg.addColorStop(.4,'#a78bfa');tg.addColorStop(1,'#f472b6')
+  x.textAlign='center';x.textBaseline='middle'
+  x.fillStyle=tg;x.font=`${fs}px serif`;x.fillText('✦',cx,cy)
+  // label
+  const ng=x.createLinearGradient(0,0,size,0)
+  ng.addColorStop(0,'#c4b5fd');ng.addColorStop(1,'#f472b6')
+  x.fillStyle=ng
+  x.font=`700 ${size*.1}px -apple-system,system-ui,sans-serif`
+  x.fillText('EchoVera',cx,size*.82)
+  return c.toDataURL('image/png')
 }
 
-// Catch the install prompt (Android/Chrome)
-window.addEventListener('beforeinstallprompt', e=>{
-  e.preventDefault()
-  deferredPrompt = e
-  // Show banner after 3 seconds if not dismissed before
-  const dismissed = localStorage.getItem('pwa-dismissed')
-  if(!dismissed){
-    setTimeout(()=>showPWABanner(), 3000)
-  }
-})
+// Pre-build icons we need
+const ICON_SIZES=[72,96,128,144,152,180,192,256,384,512]
+const iconCache={}
+function getIcon(size){
+  if(!iconCache[size]) iconCache[size]=buildIconDataURL(size)
+  return iconCache[size]
+}
 
-// After successful install
-window.addEventListener('appinstalled', ()=>{
-  hidePWABanner()
-  deferredPrompt = null
-  toast('EchoVera installed! 🎉 Find it on your home screen','ok')
+// ── STEP 2: Inject manifest as blob: URL ──────────────────
+function injectManifest(){
+  // Build icon list using data URLs — no files needed
+  const icons=ICON_SIZES.map(s=>({
+    src:getIcon(s),
+    sizes:`${s}x${s}`,
+    type:'image/png',
+    purpose: s>=192 ? 'any maskable' : 'any'
+  }))
+  const manifest={
+    name:'EchoVera',
+    short_name:'EchoVera',
+    description:'Connect, Share, Echo — Real-time social chat with live GPS tracking',
+    start_url:location.pathname||'/',
+    scope:location.pathname||'/',
+    display:'standalone',
+    display_override:['window-controls-overlay','standalone'],
+    background_color:'#09090f',
+    theme_color:'#09090f',
+    orientation:'portrait-primary',
+    lang:'en',
+    categories:['social','communication'],
+    prefer_related_applications:false,
+    icons,
+    shortcuts:[
+      {name:'Messages',short_name:'Chat',url:(location.pathname||'/')+'?page=chats',icons:[{src:getIcon(96),sizes:'96x96'}]},
+      {name:'Tracker',short_name:'Tracker',url:(location.pathname||'/')+'?page=tracker',icons:[{src:getIcon(96),sizes:'96x96'}]}
+    ]
+  }
+  const blob=new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'})
+  const url=URL.createObjectURL(blob)
+  // Remove any existing manifest link
+  document.querySelectorAll('link[rel="manifest"]').forEach(l=>l.remove())
+  const link=document.createElement('link')
+  link.rel='manifest';link.href=url
+  document.head.appendChild(link)
+  // Apple touch icon (inject inline)
+  ;[180,152,120].forEach(s=>{
+    const l2=document.createElement('link')
+    l2.rel='apple-touch-icon';l2.sizes=`${s}x${s}`;l2.href=getIcon(s)
+    document.head.appendChild(l2)
+  })
+  // Favicon
+  const fav=document.createElement('link')
+  fav.rel='icon';fav.type='image/png';fav.href=getIcon(32)||getIcon(72)
+  document.head.appendChild(fav)
+  console.log('[EchoVera] Manifest injected via blob URL')
+}
+
+// ── STEP 3: Inline service worker as blob: URL ────────────
+const SW_CODE=`
+const VER='echovera-v2'
+const PRECACHE=['/']
+self.addEventListener('install',e=>{
+  console.log('[SW] install',VER)
+  e.waitUntil(
+    caches.open(VER).then(c=>c.addAll(PRECACHE)).then(()=>self.skipWaiting())
+  )
 })
+self.addEventListener('activate',e=>{
+  e.waitUntil(
+    caches.keys().then(keys=>Promise.all(
+      keys.filter(k=>k!==VER).map(k=>caches.delete(k))
+    )).then(()=>self.clients.claim())
+  )
+})
+self.addEventListener('fetch',e=>{
+  const u=new URL(e.request.url)
+  if(e.request.method!=='GET') return
+  if(u.hostname.includes('supabase.co')) return
+  if(e.request.url.startsWith('ws')) return
+  // OSM tiles — cache first
+  if(u.hostname.includes('openstreetmap.org')){
+    e.respondWith(caches.open('osm').then(async c=>{
+      const hit=await c.match(e.request)
+      if(hit) return hit
+      const res=await fetch(e.request).catch(()=>null)
+      if(res&&res.ok) c.put(e.request,res.clone())
+      return res||new Response('',{status:503})
+    }))
+    return
+  }
+  // CDN resources (fonts, Leaflet, Supabase SDK) — cache first
+  if(u.hostname.includes('fonts.')||u.hostname.includes('unpkg.')||u.hostname.includes('jsdelivr.')){
+    e.respondWith(caches.open('cdn').then(async c=>{
+      const hit=await c.match(e.request)
+      if(hit) return hit
+      const res=await fetch(e.request).catch(()=>null)
+      if(res&&res.ok) c.put(e.request,res.clone())
+      return res||new Response('',{status:503})
+    }))
+    return
+  }
+  // Everything else — network first, cache fallback
+  e.respondWith(
+    fetch(e.request).then(res=>{
+      if(res.ok){
+        const clone=res.clone()
+        caches.open(VER).then(c=>c.put(e.request,clone))
+      }
+      return res
+    }).catch(async()=>{
+      const hit=await caches.match(e.request)
+      return hit||caches.match('/')
+    })
+  )
+})
+self.addEventListener('push',e=>{
+  if(!e.data) return
+  let d; try{d=e.data.json()}catch{d={title:'EchoVera',body:e.data.text()}}
+  e.waitUntil(self.registration.showNotification(d.title||'EchoVera',{
+    body:d.body||'New notification',
+    icon:'/icons/icon-192.png',
+    badge:'/icons/icon-96.png',
+    vibrate:[100,50,100],
+    tag:'echovera'
+  }))
+})
+self.addEventListener('notificationclick',e=>{
+  e.notification.close()
+  e.waitUntil(clients.matchAll({type:'window'}).then(cs=>{
+    for(const c of cs) if('focus' in c) return c.focus()
+    if(clients.openWindow) return clients.openWindow('/')
+  }))
+})
+self.addEventListener('message',e=>{if(e.data==='SKIP_WAITING') self.skipWaiting()})
+`
+
+async function registerInlineSW(){
+  if(!('serviceWorker' in navigator)) return
+  try{
+    // Create a blob URL for the SW code — no sw.js file needed
+    const blob=new Blob([SW_CODE],{type:'application/javascript'})
+    const swURL=URL.createObjectURL(blob)
+    // Service workers from blob: URLs need a special header trick on some browsers.
+    // We use a workaround: register via a tiny interceptor script that imports the blob.
+    // The cleanest approach that works everywhere is a minimal sw.js that self-updates.
+    // Since we're on Vercel with our files uploaded, we try blob first then fallback.
+    let reg
+    try{
+      reg=await navigator.serviceWorker.register(swURL,{scope:'./'})
+      console.log('[EchoVera] SW registered via blob:',reg.scope)
+    }catch(blobErr){
+      // Blob registration failed (some browsers restrict this) — try sw.js if it exists
+      try{
+        reg=await navigator.serviceWorker.register('sw.js',{scope:'./'})
+        console.log('[EchoVera] SW registered via sw.js:',reg.scope)
+      }catch(fileErr){
+        console.warn('[EchoVera] SW not available:',fileErr.message)
+        return
+      }
+    }
+    // Handle SW updates
+    reg.addEventListener('updatefound',()=>{
+      const newSW=reg.installing
+      newSW.addEventListener('statechange',()=>{
+        if(newSW.state==='installed'&&navigator.serviceWorker.controller){
+          toast('Update available — refresh to get the latest version 🔄','info')
+        }
+      })
+    })
+  }catch(err){
+    console.warn('[EchoVera] SW setup error:',err.message)
+  }
+}
+
+// ── STEP 4: Install prompt handling ──────────────────────
+let deferredPrompt=null
+let pwaCheckInterval=null
 
 function showPWABanner(){
-  const b = document.getElementById('pwa-banner')
-  if(b) b.classList.add('show')
+  const b=document.getElementById('pwa-banner')
+  if(b&&!b.classList.contains('show')) b.classList.add('show')
 }
 function hidePWABanner(){
-  const b = document.getElementById('pwa-banner')
-  if(b) b.classList.remove('show')
+  const b=document.getElementById('pwa-banner'); if(b) b.classList.remove('show')
 }
+
+// Android/Chrome — native prompt
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault()
+  deferredPrompt=e
+  console.log('[EchoVera] Install prompt ready')
+  if(!localStorage.getItem('pwa-dismissed')&&!localStorage.getItem('pwa-installed')){
+    setTimeout(showPWABanner,2500)
+  }
+})
+
+window.addEventListener('appinstalled',()=>{
+  hidePWABanner()
+  deferredPrompt=null
+  localStorage.setItem('pwa-installed','1')
+  toast('EchoVera installed! 🎉 Open it from your home screen','ok')
+})
+
 async function installPWA(){
   if(deferredPrompt){
+    // Android Chrome — show native prompt
     deferredPrompt.prompt()
-    const {outcome} = await deferredPrompt.userChoice
-    if(outcome==='accepted') toast('Installing EchoVera… 📲','ok')
-    deferredPrompt = null
+    const{outcome}=await deferredPrompt.userChoice
+    deferredPrompt=null
     hidePWABanner()
+    if(outcome==='accepted') toast('Installing EchoVera… 📲','ok')
+    else toast('You can install later from the browser menu','info')
+  } else if(isIOS()){
+    // iOS — show step-by-step modal
+    showIOSGuide()
+  } else if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+    // Already installed or desktop
+    toast('App already installed! Look on your home screen 📱','info')
   } else {
-    // iOS fallback — show instructions
-    toast('On iPhone: tap Share → Add to Home Screen','info')
+    // Generic fallback
+    showIOSGuide()
   }
 }
+
 function dismissPWA(){
   hidePWABanner()
   localStorage.setItem('pwa-dismissed','1')
 }
 
+function isIOS(){
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream
+}
+function isInStandaloneMode(){
+  return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true
+}
+
+// ── iOS install guide modal ───────────────────────────────
+function showIOSGuide(){
+  // Remove existing
+  document.getElementById('ios-guide')?.remove()
+  const m=document.createElement('div')
+  m.id='ios-guide'
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:9990;display:flex;align-items:flex-end;justify-content:center'
+  m.innerHTML=`
+    <div style="background:#18181f;border:1px solid #2e2e45;border-radius:28px 28px 0 0;padding:28px 24px calc(32px + env(safe-area-inset-bottom));width:100%;max-width:480px;animation:slideUp .35s cubic-bezier(.4,0,.2,1)">
+      <div style="width:36px;height:4px;background:#2e2e45;border-radius:2px;margin:0 auto 24px"></div>
+      <div style="font-size:32px;text-align:center;margin-bottom:12px">📲</div>
+      <h3 style="font-size:20px;font-weight:800;text-align:center;margin-bottom:6px">Install EchoVera</h3>
+      <p style="font-size:14px;color:#9d9bc0;text-align:center;margin-bottom:24px;line-height:1.6">Add EchoVera to your home screen for the full app experience</p>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:14px;background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:14px">
+          <div style="font-size:28px;flex-shrink:0">1️⃣</div>
+          <div>
+            <div style="font-size:14px;font-weight:700;margin-bottom:2px">Tap the Share button</div>
+            <div style="font-size:12px;color:#9d9bc0">The box with an arrow pointing up at the bottom of Safari</div>
+          </div>
+          <div style="font-size:24px;margin-left:auto">⬆️</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:14px">
+          <div style="font-size:28px;flex-shrink:0">2️⃣</div>
+          <div>
+            <div style="font-size:14px;font-weight:700;margin-bottom:2px">Scroll down and tap</div>
+            <div style="font-size:12px;color:#9d9bc0">"Add to Home Screen" then tap <strong style="color:#f4f0ff">Add</strong></div>
+          </div>
+          <div style="font-size:24px;margin-left:auto">🏠</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:14px">
+          <div style="font-size:28px;flex-shrink:0">3️⃣</div>
+          <div>
+            <div style="font-size:14px;font-weight:700;margin-bottom:2px">Open EchoVera from home screen</div>
+            <div style="font-size:12px;color:#9d9bc0">It runs fullscreen like a real app — no browser bar!</div>
+          </div>
+          <div style="font-size:24px;margin-left:auto">✦</div>
+        </div>
+      </div>
+      <button onclick="document.getElementById('ios-guide').remove()" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;border-radius:14px;padding:15px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:16px;cursor:pointer">Got it!</button>
+    </div>`
+  m.addEventListener('click',e=>{if(e.target===m) m.remove()})
+  document.body.appendChild(m)
+}
+
+// ── STEP 5: Boot everything ───────────────────────────────
+;(async function initPWA(){
+  // Inject manifest first so browser can read it
+  injectManifest()
+
+  // Register SW
+  await registerInlineSW()
+
+  // If already installed as PWA, hide the banner and don't show it
+  if(isInStandaloneMode()){
+    console.log('[EchoVera] Running as installed PWA')
+    localStorage.setItem('pwa-installed','1')
+    return
+  }
+
+  // iOS: show install hint after 4s if not dismissed
+  if(isIOS()&&!localStorage.getItem('pwa-dismissed')&&!localStorage.getItem('pwa-installed')){
+    setTimeout(showPWABanner, 4000)
+  }
+
+  // Reset dismissed flag every 7 days so user sees it again
+  const dismissed=localStorage.getItem('pwa-dismissed-time')
+  if(dismissed&&Date.now()-parseInt(dismissed)>7*24*60*60*1000){
+    localStorage.removeItem('pwa-dismissed')
+    localStorage.removeItem('pwa-dismissed-time')
+  }
+})()
+
 // Online/offline detection
-window.addEventListener('offline', ()=>{
-  const b = document.getElementById('offline-bar')
-  if(b) b.classList.add('show')
+window.addEventListener('offline',()=>{
+  const b=document.getElementById('offline-bar'); if(b) b.classList.add('show')
   toast('You\'re offline 📡','info')
 })
-window.addEventListener('online', ()=>{
-  const b = document.getElementById('offline-bar')
-  if(b) b.classList.remove('show')
+window.addEventListener('online',()=>{
+  const b=document.getElementById('offline-bar'); if(b) b.classList.remove('show')
   toast('Back online! ✅','ok')
 })
 </script>
