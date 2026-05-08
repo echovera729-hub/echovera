@@ -23,52 +23,42 @@
 <!-- Favicon -->
 <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96.png">
 <link rel="icon" type="image/png" sizes="72x72" href="/icons/icon-72.png">
-<!-- Capture install prompt as early as possible - MUST be before any other scripts -->
+<!-- Capture install prompt as early as possible - before ALL other scripts -->
 <script>
-// Reset any stale install flags that block re-prompting
-// (Previous dismissals or failed installs can permanently suppress the prompt)
+window.__pwaPrompt = null;
+
+// Auto-clear stale flags that permanently block the prompt
 (function() {
-  var dismissed = localStorage.getItem('ev-dismissed-at');
-  if (dismissed) {
-    var age = Date.now() - parseInt(dismissed);
-    // Reset after 3 days so user sees the prompt again
-    if (age > 3 * 24 * 60 * 60 * 1000) {
-      localStorage.removeItem('ev-dismissed');
-      localStorage.removeItem('ev-dismissed-at');
-    }
+  var at = localStorage.getItem('ev-dismissed-at');
+  if (at && Date.now() - parseInt(at) > 3 * 24 * 60 * 60 * 1000) {
+    localStorage.removeItem('ev-dismissed');
+    localStorage.removeItem('ev-dismissed-at');
   }
-  // If we're already running standalone, mark as installed
   if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
     localStorage.setItem('ev-installed', '1');
   }
 })();
 
-window.__pwaPrompt = null;
-
 window.addEventListener('beforeinstallprompt', function(e) {
-  // MUST call preventDefault() to stop mini-infobar on Android
   e.preventDefault();
   window.__pwaPrompt = e;
-  // Show our custom banner once app JS is ready
-  var tries = 0;
-  var tryShow = setInterval(function() {
-    tries++;
+  // Poll for banner function — show as soon as app is ready
+  var poll = setInterval(function() {
     if (typeof showPWABanner === 'function') {
-      clearInterval(tryShow);
-      // Show immediately — don't gate on dismissed flag so user can always install
+      clearInterval(poll);
       if (!localStorage.getItem('ev-installed')) {
-        setTimeout(showPWABanner, 800);
+        showPWABanner(); // show immediately, no delay
       }
     }
-    if (tries > 50) clearInterval(tryShow); // give up after 10s
-  }, 200);
+  }, 100);
+  setTimeout(function() { clearInterval(poll); }, 15000);
 });
 
 window.addEventListener('appinstalled', function() {
   window.__pwaPrompt = null;
   localStorage.setItem('ev-installed', '1');
   if (typeof hidePWABanner === 'function') hidePWABanner();
-  if (typeof toast === 'function') toast('EchoVera installed! Find it in your app drawer 📱', 'ok');
+  if (typeof toast === 'function') toast('EchoVera installed! Open it from your app drawer 📱', 'ok');
 });
 </script>
 <title>EchoVera</title>
@@ -83,8 +73,35 @@ window.addEventListener('appinstalled', function() {
   --pink:#ec4899;--cyan:#06b6d4;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;
   --text:#f4f0ff;--text2:#9d9bc0;--text3:#4d4b6b;
   --border:#1e1e2e;--border2:#2e2e45;--g1:rgba(139,92,246,.15);
+  --shadow:rgba(0,0,0,.6);
   font-family:'Plus Jakarta Sans',sans-serif;
+  color-scheme: dark;
 }
+/* ── LIGHT MODE ─────────────────────────────────────────── */
+.light{
+  --bg:#f5f4ff;--bg2:#ffffff;--bg3:#eeedf8;--bg4:#e4e2f4;
+  --accent:#7c3aed;--accent2:#6d28d9;
+  --text:#1a1040;--text2:#4b4880;--text3:#9896bc;
+  --border:#dddaf0;--border2:#c8c4e8;--g1:rgba(124,58,237,.1);
+  --shadow:rgba(0,0,0,.15);
+  color-scheme: light;
+}
+.light #s-auth{background-image:
+  radial-gradient(ellipse at 30% 10%,rgba(124,58,237,.12) 0%,transparent 55%),
+  radial-gradient(ellipse at 80% 70%,rgba(236,72,153,.08) 0%,transparent 50%)}
+.light .auth-sheet,.light .tsheet,.light .loc-sheet,.light #tkcard{background:var(--bg2)}
+.light #bnav{background:rgba(255,255,255,.96)}
+.light #cvh,.light #cv-inp-wrap{background:rgba(255,255,255,.97)}
+.light .mg.theirs .bbl{background:var(--bg3);color:var(--text)}
+.light .drawer{background:var(--bg2)}
+.light #ctxm{background:var(--bg2)}
+.light .toast{background:var(--bg2)}
+.light #gps-banner{background:rgba(245,244,255,.97)}
+.light #offline-bar{background:rgba(245,158,11,.9)}
+.light #lmap .leaflet-tile{filter:none}
+.light #lmap .leaflet-control-zoom a{background:var(--bg2);color:var(--text)}
+.light .avmk-lbl{background:rgba(245,244,255,.92);color:var(--text)}
+.light #pwa-banner{background:linear-gradient(135deg,rgba(245,243,255,.98),rgba(250,248,255,.98))}
 html,body{height:100%;overflow:hidden;background:var(--bg)}
 ::-webkit-scrollbar{display:none}
 .screen{position:fixed;inset:0;display:flex;flex-direction:column;
@@ -406,6 +423,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
 /* OFFLINE INDICATOR */
 #offline-bar{position:fixed;top:0;left:0;right:0;background:rgba(245,158,11,.95);color:#000;font-size:13px;font-weight:700;text-align:center;padding:calc(env(safe-area-inset-top,0px) + 8px) 16px 8px;z-index:9998;display:none;backdrop-filter:blur(10px)}
 #offline-bar.show{display:block}
+
+/* DARK/LIGHT TOGGLE */
+.mode-toggle{width:36px;height:36px;border-radius:50%;border:1.5px solid var(--border2);background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:all .2s;flex-shrink:0}
+.mode-toggle:active{transform:scale(.9)}
 </style>
 </head>
 <body>
@@ -491,7 +512,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
     <div class="page active" id="p-chats">
       <div class="ph" style="padding-top:calc(env(safe-area-inset-top,0px)+48px)">
         <div><div class="ev-sm">EchoVera</div><div style="font-size:24px;font-weight:800;letter-spacing:-.5px;margin-top:2px">Messages</div></div>
-        <div class="ph-btn" onclick="setPage('explore')">✏️</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="mode-toggle" onclick="toggleMode()" id="mode-btn" title="Toggle dark/light mode">🌙</div>
+          <div class="ph-btn" onclick="setPage('explore')">✏️</div>
+        </div>
       </div>
       <div class="sw"><input placeholder="Search conversations…" oninput="filterChats(this.value)"></div>
       <div id="chat-list" style="flex:1;overflow-y:auto"></div>
@@ -603,10 +627,11 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
   <div style="flex:1" onclick="closeSheet('s-theme')"></div>
   <div class="tsheet">
     <div class="handle"></div>
-    <h3>🎨 Chat Theme</h3><p>Choose an accent color</p>
+    <h3>🎨 Theme & Appearance</h3><p>Accent color</p>
     <div class="swgrid" id="swgrid"></div>
     <div class="sec-t">Wallpaper</div>
     <div class="wgrid" id="wgrid"></div>
+    <div id="theme-mode-row" style="margin-top:16px"></div>
   </div>
 </div>
 
@@ -624,10 +649,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg)}
 
 <!-- PWA INSTALL BANNER -->
 <div id="pwa-banner">
-  <div class="pwa-ico">✦</div>
+  <img src="/icons/icon-96.png" style="width:48px;height:48px;border-radius:14px;flex-shrink:0" onerror="this.outerHTML='<div class=\'pwa-ico\'>✦</div>'">
   <div class="pwa-txt">
     <strong>Install EchoVera</strong>
-    <span>Add to your home screen for the full app experience — works offline too!</span>
+    <span>Add to home screen &amp; app drawer — free</span>
   </div>
   <button class="pwa-btn" onclick="installPWA()">Install</button>
   <button class="pwa-dismiss" onclick="dismissPWA()">✕</button>
@@ -1368,6 +1393,22 @@ function openTheme(){
   THEMES.forEach(th=>{const s=document.createElement('div');s.className='swatch'+(curTheme===th.n?' active':'');s.style.background=th.c;s.onclick=()=>applyTheme(th.n,th.c);el('swgrid').appendChild(s)})
   el('wgrid').innerHTML=''
   WALLS.forEach(w=>{const d=document.createElement('div');d.className='wj';d.textContent=w;d.onclick=()=>{toast('Wallpaper set! '+w,'ok');closeSheet('s-theme')};el('wgrid').appendChild(d)})
+  // Show dark/light mode toggle in theme sheet
+  const modeRow = el('theme-mode-row')
+  if (modeRow) {
+    modeRow.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">Appearance</div>
+      <div style="display:flex;gap:10px">
+        <div onclick="setMode(true)" style="flex:1;padding:12px;border-radius:14px;border:2px solid ${isDark?'var(--accent)':'var(--border)'};background:${isDark?'var(--g1)':'var(--bg3)'};cursor:pointer;text-align:center;transition:all .2s">
+          <div style="font-size:24px;margin-bottom:4px">🌙</div>
+          <div style="font-size:13px;font-weight:700;color:${isDark?'var(--accent2)':'var(--text2)'}">Dark</div>
+        </div>
+        <div onclick="setMode(false)" style="flex:1;padding:12px;border-radius:14px;border:2px solid ${!isDark?'var(--accent)':'var(--border)'};background:${!isDark?'var(--g1)':'var(--bg3)'};cursor:pointer;text-align:center;transition:all .2s">
+          <div style="font-size:24px;margin-bottom:4px">☀️</div>
+          <div style="font-size:13px;font-weight:700;color:${!isDark?'var(--accent2)':'var(--text2)'}">Light</div>
+        </div>
+      </div>`
+  }
   document.getElementById('s-theme').classList.remove('hidden')
 }
 function applyTheme(n,c){
@@ -1650,7 +1691,52 @@ function timeSince(ts){
   if(s<86400)return Math.floor(s/3600)+'h'
   return Math.floor(s/86400)+'d'
 }
-document.body.addEventListener('touchmove',e=>{if(e.target===document.body)e.preventDefault()},{passive:false})
+// ── Dark / Light mode ─────────────────────────────────────
+let isDark = true
+
+function toggleMode() { setMode(!isDark) }
+
+function setMode(dark) {
+  isDark = dark
+  applyMode()
+  localStorage.setItem('ev-mode', isDark ? 'dark' : 'light')
+  // Refresh theme sheet if open
+  const modeRow = el('theme-mode-row')
+  if (modeRow && modeRow.innerHTML) openTheme()
+}
+
+function applyMode() {
+  document.documentElement.classList.toggle('light', !isDark)
+  const btn = el('mode-btn')
+  if (btn) btn.textContent = isDark ? '🌙' : '☀️'
+}
+
+// Restore saved preference, fallback to system preference
+;(function initMode() {
+  const saved = localStorage.getItem('ev-mode')
+  if (saved) {
+    isDark = saved === 'dark'
+  } else {
+    isDark = !window.matchMedia('(prefers-color-scheme: light)').matches
+  }
+  applyMode()
+  // Also update when system preference changes
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+    if (!localStorage.getItem('ev-mode')) {
+      isDark = !e.matches
+      applyMode()
+    }
+  })
+})()
+
+// ── Fix: only block touchmove on the body itself, not scrollable children ──
+// This was preventing pull-to-refresh on pages and scrolling in lists
+document.body.addEventListener('touchmove', e => {
+  // Only block if the touch target is the bare body — not any scrollable child
+  if (e.target === document.body || e.target === document.documentElement) {
+    e.preventDefault()
+  }
+}, { passive: false })
 
 // Mark user offline when page closes — use sendBeacon for reliability
 // (async fetch in beforeunload is unreliable and may be cancelled by the browser)

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#8b5cf6">
+<link rel="manifest" href="/manifest.json">
+<title>Install EchoVera</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#09090f;color:#f4f0ff;
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  background-image:radial-gradient(ellipse at 50% 30%,rgba(139,92,246,.2) 0%,transparent 60%)}
+.card{background:#111118;border:1px solid #2e2e45;border-radius:24px;padding:32px 28px;
+  max-width:400px;width:100%;text-align:center}
+.logo{font-size:72px;margin-bottom:4px}
+h1{font-size:28px;font-weight:800;letter-spacing:-1px;
+  background:linear-gradient(135deg,#c4b5fd,#8b5cf6,#ec4899);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+p{color:#9d9bc0;font-size:15px;line-height:1.6;margin-bottom:28px}
+.btn{width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;
+  border-radius:16px;padding:16px;color:#fff;font-size:17px;font-weight:700;
+  cursor:pointer;box-shadow:0 8px 24px rgba(139,92,246,.4);margin-bottom:12px;
+  font-family:inherit;transition:transform .15s}
+.btn:active{transform:scale(.97)}
+.btn-o{width:100%;background:transparent;border:1.5px solid #2e2e45;border-radius:16px;
+  padding:14px;color:#9d9bc0;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+.status{font-size:13px;color:#9d9bc0;margin-top:20px;padding:12px;
+  background:#18181f;border-radius:12px;line-height:1.6}
+.status.ok{color:#22c55e;border:1px solid rgba(34,197,94,.2)}
+.status.warn{color:#f59e0b;border:1px solid rgba(245,158,11,.2)}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">✦</div>
+  <h1>EchoVera</h1>
+  <p>Install EchoVera on your device for the full app experience — live GPS tracking, instant messaging, and offline access.</p>
+  <button class="btn" id="install-btn" onclick="doInstall()">📲 Install App</button>
+  <button class="btn-o" onclick="location.href='/'">Open in Browser</button>
+  <div class="status" id="status">Checking install availability…</div>
+</div>
+<script>
+var prompt = null;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  prompt = e;
+  document.getElementById('status').textContent = '✅ Ready to install — tap Install App above!';
+  document.getElementById('status').className = 'status ok';
+});
+window.addEventListener('appinstalled', function() {
+  document.getElementById('status').textContent = '🎉 Installed! Open EchoVera from your app drawer.';
+  document.getElementById('status').className = 'status ok';
+  document.getElementById('install-btn').disabled = true;
+  document.getElementById('install-btn').textContent = '✅ Installed!';
+});
+async function doInstall() {
+  if (prompt) {
+    prompt.prompt();
+    var result = await prompt.userChoice;
+    prompt = null;
+    if (result.outcome === 'accepted') {
+      document.getElementById('status').textContent = '✅ Installing… check your app drawer!';
+      document.getElementById('status').className = 'status ok';
+    }
+  } else if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+    document.getElementById('status').innerHTML = '📱 iPhone: Open in <strong>Safari</strong> → tap Share ⬆ → Add to Home Screen';
+    document.getElementById('status').className = 'status warn';
+  } else {
+    document.getElementById('status').innerHTML = 'Tap ⋮ (browser menu) → <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>';
+    document.getElementById('status').className = 'status warn';
+  }
+}
+// Check if already installed
+if (window.matchMedia('(display-mode: standalone)').matches) {
+  document.getElementById('status').textContent = '✅ Already installed! This is running as a PWA.';
+  document.getElementById('status').className = 'status ok';
+} else {
+  setTimeout(function() {
+    if (!prompt) {
+      document.getElementById('status').innerHTML = 'If the install button doesn\'t work, tap ⋮ menu → <strong>"Install app"</strong>';
+      document.getElementById('status').className = 'status warn';
+    }
+  }, 3000);
+}
+</script>
+</body>
+</html>
