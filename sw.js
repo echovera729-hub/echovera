@@ -23,15 +23,13 @@ const APP_SHELL = [
 
 // ── INSTALL ────────────────────────────────────────────────
 self.addEventListener('install', e => {
-  console.log('[SW v3] Installing…')
   e.waitUntil(
     caches.open(STATIC_CACHE)
       .then(cache => cache.addAll(APP_SHELL).catch(err => {
         // Don't fail install if some files missing — log and continue
-        console.warn('[SW] Some shell files missing:', err.message)
+        // suppressed
       }))
       .then(() => {
-        console.log('[SW v3] Installed ✓')
         return self.skipWaiting()
       })
   )
@@ -39,7 +37,6 @@ self.addEventListener('install', e => {
 
 // ── ACTIVATE ──────────────────────────────────────────────
 self.addEventListener('activate', e => {
-  console.log('[SW v3] Activating…')
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
@@ -49,12 +46,9 @@ self.addEventListener('activate', e => {
                        k !== STATIC_CACHE &&
                        k !== TILE_CACHE &&
                        k !== CDN_CACHE)
-          .map(k => { console.log('[SW] Purging old cache:', k); return caches.delete(k) })
+          .map(k => caches.delete(k))
       ))
-      .then(() => {
-        console.log('[SW v3] Activated ✓')
-        return self.clients.claim()
-      })
+      .then(() => self.clients.claim())
   )
 })
 
@@ -200,9 +194,7 @@ self.addEventListener('notificationclick', e => {
 // ── Messages from app ──────────────────────────────────────
 self.addEventListener('message', e => {
   if (e.data === 'SKIP_WAITING') {
-    console.log('[SW] Skipping wait on request')
     self.skipWaiting()
   }
 })
 
-console.log('[SW v3] EchoVera Service Worker loaded ✓')
