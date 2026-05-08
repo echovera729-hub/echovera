@@ -2,8 +2,8 @@
   "name": "EchoVera",
   "short_name": "EchoVera",
   "description": "Connect, Share, Echo — Real-time social chat with live GPS tracking",
-  "start_url": "/?source=pwa",
-  "id": "echovera-app",
+  "start_url": "/",
+  "id": "/",
   "display": "standalone",
   "background_color": "#09090f",
   "theme_color": "#8b5cf6",
@@ -13,18 +13,18 @@
   "categories": ["social", "communication"],
   "prefer_related_applications": false,
   "icons": [
-    { "src": "/icons/icon-72.png",              "sizes": "72x72",   "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-96.png",              "sizes": "96x96",   "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-128.png",             "sizes": "128x128", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-144.png",             "sizes": "144x144", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-152.png",             "sizes": "152x152", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-180.png",             "sizes": "180x180", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-192.png",             "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-256.png",             "sizes": "256x256", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-384.png",             "sizes": "384x384", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png",             "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-192-maskable.png",    "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/icons/icon-512-maskable.png",    "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icons/icon-72.png",           "sizes": "72x72",   "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-96.png",           "sizes": "96x96",   "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-128.png",          "sizes": "128x128", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-144.png",          "sizes": "144x144", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-152.png",          "sizes": "152x152", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-180.png",          "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png",          "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-256.png",          "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-384.png",          "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png",          "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "screenshots": [
     {
@@ -32,29 +32,21 @@
       "sizes": "390x844",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "EchoVera — Mobile Chat"
+      "label": "EchoVera Mobile"
     },
     {
       "src": "/icons/screenshot-desktop.png",
       "sizes": "1280x800",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "EchoVera — Desktop"
+      "label": "EchoVera Desktop"
     }
   ],
   "shortcuts": [
     {
       "name": "Messages",
       "short_name": "Chat",
-      "description": "Open your messages",
-      "url": "/?source=pwa&page=chats",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96", "type": "image/png" }]
-    },
-    {
-      "name": "Live Tracker",
-      "short_name": "Tracker",
-      "description": "See where your friends are",
-      "url": "/?source=pwa&page=tracker",
+      "url": "/",
       "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96", "type": "image/png" }]
     }
   ]

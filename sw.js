@@ -1,6 +1,6 @@
 // EchoVera Service Worker v3
 // Must pass Chrome PWA installability audit:
-// ✓ Responds with 200 for start_url (?source=pwa)
+// ✓ Responds with 200 for start_url /
 // ✓ fetch handler present
 // ✓ Correct scope /
 // ✓ HTTPS (enforced by Vercel)
@@ -13,7 +13,6 @@ const CDN_CACHE = 'echovera-cdn-v3'
 // Core app shell — cached on install
 const APP_SHELL = [
   '/',
-  '/?source=pwa',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -94,7 +93,7 @@ self.addEventListener('fetch', e => {
     return
   }
 
-  // ── App shell (index.html, / , /?source=pwa): network-first ──
+  // ── App shell (index.html, /): network-first ──
   // Network-first ensures users always get updates, with cache fallback
   e.respondWith(appShellStrategy(request))
 })
@@ -150,7 +149,7 @@ async function appShellStrategy(request) {
     // Offline fallback — serve cached index.html
     const hit = await cache.match(request) ||
                 await cache.match('/') ||
-                await cache.match('/?source=pwa')
+                await cache.match('/')
     if (hit) return hit
     // Last resort offline page
     return new Response(`<!DOCTYPE html>

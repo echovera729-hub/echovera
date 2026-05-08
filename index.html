@@ -5,18 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EchoVera">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#09090f">
 <meta name="description" content="EchoVera — Connect, Share, Echo. Real-time social chat with live GPS tracking.">
 <meta name="application-name" content="EchoVera">
-<meta name="apple-mobile-web-app-title" content="EchoVera">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#09090f">
 <meta name="msapplication-TileImage" content="/icons/icon-144.png">
 <!-- PWA Manifest -->
 <link rel="manifest" href="/manifest.json">
-<!-- Apple touch icons — iOS uses these for home screen -->
+<!-- Apple touch icons -->
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png">
 <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
@@ -25,29 +23,52 @@
 <!-- Favicon -->
 <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96.png">
 <link rel="icon" type="image/png" sizes="72x72" href="/icons/icon-72.png">
-<!-- CRITICAL: capture install prompt as early as possible, before any other JS -->
+<!-- Capture install prompt as early as possible - MUST be before any other scripts -->
 <script>
+// Reset any stale install flags that block re-prompting
+// (Previous dismissals or failed installs can permanently suppress the prompt)
+(function() {
+  var dismissed = localStorage.getItem('ev-dismissed-at');
+  if (dismissed) {
+    var age = Date.now() - parseInt(dismissed);
+    // Reset after 3 days so user sees the prompt again
+    if (age > 3 * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem('ev-dismissed');
+      localStorage.removeItem('ev-dismissed-at');
+    }
+  }
+  // If we're already running standalone, mark as installed
+  if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+    localStorage.setItem('ev-installed', '1');
+  }
+})();
+
 window.__pwaPrompt = null;
+
 window.addEventListener('beforeinstallprompt', function(e) {
+  // MUST call preventDefault() to stop mini-infobar on Android
   e.preventDefault();
   window.__pwaPrompt = e;
-  console.log('[EchoVera] beforeinstallprompt captured early ✓');
-  // Show banner when app is ready
+  // Show our custom banner once app JS is ready
+  var tries = 0;
   var tryShow = setInterval(function() {
+    tries++;
     if (typeof showPWABanner === 'function') {
       clearInterval(tryShow);
-      if (!localStorage.getItem('pwa-dismissed') && !localStorage.getItem('pwa-installed')) {
-        setTimeout(showPWABanner, 1500);
+      // Show immediately — don't gate on dismissed flag so user can always install
+      if (!localStorage.getItem('ev-installed')) {
+        setTimeout(showPWABanner, 800);
       }
     }
+    if (tries > 50) clearInterval(tryShow); // give up after 10s
   }, 200);
 });
+
 window.addEventListener('appinstalled', function() {
   window.__pwaPrompt = null;
-  localStorage.setItem('pwa-installed', '1');
-  console.log('[EchoVera] App installed to home screen ✓');
+  localStorage.setItem('ev-installed', '1');
   if (typeof hidePWABanner === 'function') hidePWABanner();
-  if (typeof toast === 'function') toast('EchoVera installed! 🎉 Find it in your app drawer', 'ok');
+  if (typeof toast === 'function') toast('EchoVera installed! Find it in your app drawer 📱', 'ok');
 });
 </script>
 <title>EchoVera</title>
@@ -624,15 +645,13 @@ const sb = supabase.createClient(SURL, SKEY)
 // ═══════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════
-let CU = null          // current user profile row
-let CCid = null        // current open chat partner id
-let midx = 0           // local msg id counter
-let users = []         // all approved users cache
-let msgsCache = {}     // { userId: [msgs] }
+let CU = null, CCid = null, midx = 0
+let users = [], msgsCache = {}
 let leafMap = null, markers = {}, accCircle = null, mapReady = false
-let watchId = null, gpsState = 'acquiring'
+let watchId = null, gpsState = 'acquiring', gpsTimer = null
 let activeTkCard = null
 let realtimeChan = null, msgChan = null
+const disTimers = {}  // keyed by msg id — lets us cancel disappear timers on delete
 const ADMIN_KEY = 'admin123'
 const THEMES = [
   {n:'violet',c:'#8b5cf6'},{n:'pink',c:'#ec4899'},{n:'cyan',c:'#06b6d4'},
@@ -645,13 +664,19 @@ let curTheme = 'violet'
 // BOOT — check existing session
 // ═══════════════════════════════════════
 window.addEventListener('load', async () => {
-  setLoad('Checking session…')
-  const { data: { session } } = await sb.auth.getSession()
-  if (session) {
-    await loadUserProfile(session.user.id)
-  } else {
+  try {
+    setLoad('Checking session…')
+    const { data: { session } } = await sb.auth.getSession()
+    if (session) {
+      await loadUserProfile(session.user.id)
+    } else {
+      show('s-loading', false)
+      show('s-auth', true)
+    }
+  } catch (err) {
     show('s-loading', false)
     show('s-auth', true)
+    showErr('login-err', 'Connection error — check your internet and try again.')
   }
 })
 
@@ -820,38 +845,51 @@ function startAutoGPS() {
 }
 
 async function onGpsUpdate(pos) {
-  const { latitude:lat, longitude:lng, accuracy:acc } = pos.coords
-  CU.loc.lat = lat; CU.loc.lng = lng; CU.loc.acc = acc
-  CU.locUpdated = Date.now()
-  setGpsStatus('active')
-  hideGpsBanner()
-  if (mapReady) {
-    updateMarker(CU.id, lat, lng)
-    if (accCircle) { accCircle.setLatLng([lat,lng]); accCircle.setRadius(acc) }
+  try {
+    const { latitude:lat, longitude:lng, accuracy:acc } = pos.coords
+    CU.loc.lat = lat; CU.loc.lng = lng; CU.loc.acc = acc
+    CU.locUpdated = Date.now()
+    setGpsStatus('active')
+    hideGpsBanner()
+    if (mapReady) {
+      updateMarker(CU.id, lat, lng)
+      if (accCircle) { accCircle.setLatLng([lat,lng]); accCircle.setRadius(acc) }
+    }
+    renderLegend()
+    if (activeTkCard === CU.id) renderTkCard(CU.id)
+    // Push to Supabase — fire and don't block UI
+    sb.from('users').update({
+      lat, lng, accuracy: acc,
+      loc_updated_at: new Date().toISOString(),
+      status: 'online'
+    }).eq('id', CU.id)
+    // Update profile lat/lng fields if currently visible
+    const eLat = el('e-lat'), eLng = el('e-lng')
+    if (eLat) eLat.value = lat.toFixed(6)
+    if (eLng) eLng.value = lng.toFixed(6)
+  } catch (_) {
+    // GPS update errors are non-fatal — silently skip
   }
-  renderLegend()
-  if (activeTkCard === CU.id) renderTkCard(CU.id)
-  // Push to Supabase
-  await sb.from('users').update({
-    lat, lng,
-    accuracy: acc,
-    loc_updated_at: new Date().toISOString(),
-    status: 'online'
-  }).eq('id', CU.id)
-  // Update profile fields if visible
-  const eLat = el('e-lat'), eLng = el('e-lng')
-  if (eLat) eLat.value = lat.toFixed(6)
-  if (eLng) eLng.value = lng.toFixed(6)
 }
 
 function onGpsError(err) {
   if (err.code === 1) {
+    // PERMISSION_DENIED — user blocked location, stop watching
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId)
+      watchId = null
+    }
     setGpsStatus('denied')
-    showGpsBanner('denied','Location permission denied')
-    toast('📍 Enable location in browser for live tracking','err')
-  } else {
+    showGpsBanner('denied', 'Location permission denied')
+    toast('📍 Enable location in browser settings for live tracking', 'err')
+  } else if (err.code === 2) {
+    // POSITION_UNAVAILABLE — transient, keep watching
     setGpsStatus('acquiring')
-    showGpsBanner('acquiring','Re-acquiring GPS…')
+    showGpsBanner('acquiring', 'GPS signal lost — retrying…')
+  } else {
+    // TIMEOUT — transient, watchPosition retries automatically
+    setGpsStatus('acquiring')
+    showGpsBanner('acquiring', 'GPS timeout — retrying…')
   }
 }
 
@@ -869,7 +907,6 @@ function setGpsStatus(state) {
   txt.textContent = cfg.text
 }
 
-let gpsTimer = null
 function showGpsBanner(type, msg) {
   const b = el('gps-banner'); if (!b) return
   const colors = { active:'var(--green)', acquiring:'var(--amber)', denied:'var(--red)' }
@@ -1094,11 +1131,11 @@ function show(id,vis) { document.getElementById(id).classList.toggle('hidden',!v
 function closeSheet(id) { document.getElementById(id).classList.add('hidden') }
 function setPage(p) {
   ['chats','tracker','explore','notifs','profile'].forEach(x => {
-    const pg=el('p-'+x), ni=el('ni-'+x)
-    if (pg) { pg.classList.toggle('active',x===p); pg.style.display=x===p?'flex':'none' }
-    if (ni) ni.classList.toggle('active',x===p)
+    const pg = el('p-'+x), ni = el('ni-'+x)
+    if (pg) pg.classList.toggle('active', x===p)
+    if (ni) ni.classList.toggle('active', x===p)
   })
-  if (p==='tracker') setTimeout(initMap, 60)
+  if (p === 'tracker') setTimeout(initMap, 60)
   closePickers()
 }
 
@@ -1134,19 +1171,24 @@ function filterChats(f) { renderChatList(f) }
 // CHAT VIEW
 // ═══════════════════════════════════════
 async function openChat(uid) {
+  const u = users.find(x => x.id === uid)
+  if (!u) { toast('Contact not found', 'err'); return }
   CCid = uid
-  const u = users.find(x=>x.id===uid)
   el('cv-ava').textContent = u.av
   el('cv-ava').style.background = 'linear-gradient(135deg,var(--accent),#7c3aed)'
   el('cv-nm').textContent = u.name
   el('cv-st').innerHTML = statusLine(u)
   show('s-chat', true)
-  // Load messages from Supabase
-  await loadMessages(uid)
-  renderMsgs()
-  // Mark incoming as read
-  await sb.from('messages').update({ read:true }).eq('from_user',uid).eq('to_user',CU.id).eq('read',false)
-  renderChatList()
+  try {
+    await loadMessages(uid)
+    renderMsgs()
+    // Mark incoming messages as read
+    sb.from('messages').update({ read:true })
+      .eq('from_user', uid).eq('to_user', CU.id).eq('read', false)
+    renderChatList()
+  } catch (err) {
+    toast('Could not load messages — check connection', 'err')
+  }
   closePickers()
 }
 
@@ -1197,13 +1239,26 @@ function addBbl(msg, container, isNew=false) {
 }
 
 function schedDis(msg) {
-  if (msg.d==='read'&&msg.from!==CU.id) setTimeout(()=>disMsg(msg.id),3000)
-  else if (msg.d==='5min') setTimeout(()=>disMsg(msg.id),300000)
-  else if (msg.d==='10min') setTimeout(()=>disMsg(msg.id),600000)
+  let delay = 0
+  if (msg.d === 'read' && msg.from !== CU.id) delay = 3000
+  else if (msg.d === '5min') delay = 300000
+  else if (msg.d === '10min') delay = 600000
+  if (delay > 0) {
+    disTimers[msg.id] = setTimeout(() => {
+      delete disTimers[msg.id]
+      disMsg(msg.id)
+    }, delay)
+  }
 }
 function disMsg(id) {
-  const e = document.getElementById('bbl-'+id)
-  if (e) { e.style.opacity='0'; setTimeout(()=>{ const g=document.querySelector(`[data-mid="${id}"]`);if(g)g.remove() },500) }
+  const e = document.getElementById('bbl-' + id)
+  if (e) {
+    e.style.opacity = '0'
+    setTimeout(() => {
+      const g = document.querySelector(`[data-mid="${id}"]`)
+      if (g) g.remove()
+    }, 500)
+  }
 }
 
 async function sendMsg() {
@@ -1555,17 +1610,22 @@ function ctxMenu(e,mid){
   m.style.left=x+'px'; m.style.top=y+'px'; m.style.display='block'
   setTimeout(()=>document.addEventListener('click',()=>m.style.display='none',{once:true}),10)
 }
-function cpyMsg(id){
-  const msgs=Object.values(msgsCache).flat()
-  const msg=msgs.find(m=>m.id==id)
-  if(msg?.text) navigator.clipboard?.writeText(msg.text).then(()=>toast('Copied!','ok'))
+function cpyMsg(id) {
+  const msgs = Object.values(msgsCache).flat()
+  const msg = msgs.find(m => m.id === id)
+  if (msg?.text) navigator.clipboard?.writeText(msg.text).then(() => toast('Copied!', 'ok'))
 }
-async function delMsg(id){
-  await sb.from('messages').delete().eq('id',id)
-  const g=document.querySelector(`[data-mid="${id}"]`); if(g) g.remove()
-  // remove from cache
-  for(const cid in msgsCache){const i=msgsCache[cid].findIndex(m=>m.id==id);if(i>-1){msgsCache[cid].splice(i,1);break}}
-  toast('Deleted','info')
+async function delMsg(id) {
+  // Cancel any pending disappear timer for this message
+  if (disTimers[id]) { clearTimeout(disTimers[id]); delete disTimers[id] }
+  await sb.from('messages').delete().eq('id', id)
+  const g = document.querySelector(`[data-mid="${id}"]`)
+  if (g) g.remove()
+  for (const cid in msgsCache) {
+    const i = msgsCache[cid].findIndex(m => m.id === id)
+    if (i > -1) { msgsCache[cid].splice(i, 1); break }
+  }
+  toast('Deleted', 'info')
 }
 
 // ═══════════════════════════════════════
@@ -1592,16 +1652,27 @@ function timeSince(ts){
 }
 document.body.addEventListener('touchmove',e=>{if(e.target===document.body)e.preventDefault()},{passive:false})
 
-// Sign out on page unload — mark offline
-window.addEventListener('beforeunload',()=>{
-  if(CU) sb.from('users').update({status:'offline'}).eq('id',CU.id)
+// Mark user offline when page closes — use sendBeacon for reliability
+// (async fetch in beforeunload is unreliable and may be cancelled by the browser)
+window.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && CU) {
+    sb.from('users').update({ status: 'offline' }).eq('id', CU.id)
+  }
+})
+window.addEventListener('beforeunload', () => {
+  if (CU) {
+    // navigator.sendBeacon is synchronous-safe for page unload
+    const url = `${SURL}/rest/v1/users?id=eq.${CU.id}`
+    const data = JSON.stringify({ status: 'offline' })
+    navigator.sendBeacon && navigator.sendBeacon(url, new Blob([data], {
+      type: 'application/json'
+    }))
+  }
 })
 
 
 // ═══════════════════════════════════════════════════════════
-// PWA — Service Worker + Install (Android app drawer support)
-// The beforeinstallprompt is captured early in <head>.
-// This block handles SW registration + install UI only.
+// PWA — Service Worker + Install
 // ═══════════════════════════════════════════════════════════
 
 // ── Register Service Worker ────────────────────────────────
@@ -1609,9 +1680,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      console.log('[EchoVera] SW registered ✓ scope:', reg.scope)
-
-      // Prompt user when a new SW version is waiting
       reg.addEventListener('updatefound', () => {
         const sw = reg.installing
         sw.addEventListener('statechange', () => {
@@ -1620,17 +1688,14 @@ if ('serviceWorker' in navigator) {
           }
         })
       })
-
-      // Tell any waiting SW to activate immediately
       if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING')
-
-    } catch (err) {
-      console.warn('[EchoVera] SW registration failed:', err.message)
+    } catch (_) {
+      // SW unavailable — app still works without offline support
     }
   })
 }
 
-// ── Banner ─────────────────────────────────────────────────
+// ── Banner show/hide ───────────────────────────────────────
 function showPWABanner () {
   const b = document.getElementById('pwa-banner')
   if (b && !b.classList.contains('show')) b.classList.add('show')
@@ -1640,38 +1705,45 @@ function hidePWABanner () {
   if (b) b.classList.remove('show')
 }
 
-// ── Install handler ────────────────────────────────────────
+// ── Main install handler ───────────────────────────────────
 async function installPWA () {
   const prompt = window.__pwaPrompt
+
   if (prompt) {
-    // ✅ Android Chrome / Samsung Internet — native install to app drawer
-    prompt.prompt()
-    const { outcome } = await prompt.userChoice
-    window.__pwaPrompt = null
-    hidePWABanner()
-    if (outcome === 'accepted') {
-      toast('Installing to your app drawer… 📲', 'ok')
-    } else {
-      toast('You can install later from the browser menu ☰ → Install App', 'info')
+    // Android Chrome / Samsung Internet / Edge — native install dialog
+    // This is what puts it in the APP DRAWER
+    try {
+      prompt.prompt()
+      const { outcome } = await prompt.userChoice
+      window.__pwaPrompt = null
+      hidePWABanner()
+      if (outcome === 'accepted') {
+        toast('Installing… check your app drawer in a moment 📲', 'ok')
+      } else {
+        // User dismissed — show manual instructions as backup
+        setTimeout(showManualGuide, 400)
+      }
+    } catch (_) {
+      showManualGuide()
     }
   } else if (isIOS()) {
-    // iPhone / iPad — manual steps
     showIOSGuide()
   } else if (isStandalone()) {
-    toast('Already installed! Check your app drawer 📱', 'info')
+    toast('Already installed! Open it from your app drawer 📱', 'info')
   } else {
-    // Desktop Chrome or other — show menu instructions
-    showGenericGuide()
+    // Chrome suppressed the prompt (e.g. already dismissed before, or policy)
+    // Show manual instructions
+    showManualGuide()
   }
 }
 
 function dismissPWA () {
   hidePWABanner()
-  localStorage.setItem('pwa-dismissed', '1')
-  localStorage.setItem('pwa-dismissed-time', Date.now().toString())
+  localStorage.setItem('ev-dismissed', '1')
+  localStorage.setItem('ev-dismissed-at', Date.now().toString())
 }
 
-// ── Platform detection ─────────────────────────────────────
+// ── Platform helpers ───────────────────────────────────────
 function isIOS () {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
 }
@@ -1679,100 +1751,128 @@ function isStandalone () {
   return window.matchMedia('(display-mode: standalone)').matches ||
          window.navigator.standalone === true
 }
+function isAndroid () {
+  return /Android/.test(navigator.userAgent)
+}
+
+// ── Manual install guide (Android — when prompt suppressed) ──
+function showManualGuide () {
+  document.getElementById('ev-guide')?.remove()
+  const m = document.createElement('div')
+  m.id = 'ev-guide'
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:9990;display:flex;align-items:flex-end;justify-content:center'
+
+  const isSamsung = /SamsungBrowser/.test(navigator.userAgent)
+  const isEdge = /EdgA/.test(navigator.userAgent)
+  const browserName = isSamsung ? 'Samsung Internet' : isEdge ? 'Edge' : 'Chrome'
+  const menuIcon = isSamsung ? '⋮' : isEdge ? '…' : '⋮'
+
+  m.innerHTML = `
+    <div style="background:#18181f;border:1px solid #2e2e45;border-radius:28px 28px 0 0;
+      padding:24px 20px calc(28px + env(safe-area-inset-bottom));width:100%;max-width:480px">
+      <div style="width:36px;height:4px;background:#2e2e45;border-radius:2px;margin:0 auto 20px"></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <img src="/icons/icon-96.png" style="width:56px;height:56px;border-radius:16px" onerror="this.style.display='none'">
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#f4f0ff">Install EchoVera</div>
+          <div style="font-size:13px;color:#9d9bc0;margin-top:2px">Add to your app drawer</div>
+        </div>
+      </div>
+
+      <div style="background:#111118;border:1px solid #2e2e45;border-radius:16px;padding:16px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:#8b5cf6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">
+          ${browserName} on Android
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;font-weight:700;color:#a78bfa">1</div>
+            <div style="font-size:14px;color:#f4f0ff">Tap the <strong>${menuIcon}</strong> menu (top right of browser)</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;font-weight:700;color:#a78bfa">2</div>
+            <div style="font-size:14px;color:#f4f0ff">Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;display:flex;align-items:center;justify-content:circle;font-size:15px;flex-shrink:0;font-weight:700;color:#a78bfa">3</div>
+            <div style="font-size:14px;color:#f4f0ff">Tap <strong>"Install"</strong> — it appears in your <strong>app drawer</strong>!</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.2);
+        border-radius:12px;padding:12px;margin-bottom:16px;font-size:12px;color:#a78bfa;line-height:1.6">
+        💡 <strong>Tip:</strong> If you dismissed the install prompt before, Chrome waits a few days before showing it again.
+        Use the browser menu method above — it always works immediately.
+      </div>
+
+      <button onclick="document.getElementById('ev-guide').remove()"
+        style="width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;
+        border-radius:14px;padding:14px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;
+        font-weight:700;font-size:16px;cursor:pointer">Got it!</button>
+    </div>`
+  m.addEventListener('click', e => { if (e.target === m) m.remove() })
+  document.body.appendChild(m)
+}
 
 // ── iOS install guide ──────────────────────────────────────
 function showIOSGuide () {
-  document.getElementById('ios-guide')?.remove()
+  document.getElementById('ev-guide')?.remove()
   const m = document.createElement('div')
-  m.id = 'ios-guide'
-  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:9990;display:flex;align-items:flex-end;justify-content:center'
+  m.id = 'ev-guide'
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:9990;display:flex;align-items:flex-end;justify-content:center'
   m.innerHTML = `
-    <div style="background:#18181f;border:1px solid #2e2e45;border-radius:28px 28px 0 0;padding:28px 24px calc(32px + env(safe-area-inset-bottom));width:100%;max-width:480px;animation:slideUp .35s cubic-bezier(.4,0,.2,1)">
-      <div style="width:36px;height:4px;background:#2e2e45;border-radius:2px;margin:0 auto 24px"></div>
-      <div style="text-align:center;margin-bottom:16px">
-        <img src="/icons/icon-120.png" style="width:72px;height:72px;border-radius:18px;box-shadow:0 8px 24px rgba(139,92,246,.5)" onerror="this.style.display='none'">
-      </div>
-      <h3 style="font-size:20px;font-weight:800;text-align:center;margin-bottom:6px;color:#f4f0ff">Install EchoVera on iPhone</h3>
-      <p style="font-size:14px;color:#9d9bc0;text-align:center;margin-bottom:24px;line-height:1.6">Follow these steps in <strong style="color:#f4f0ff">Safari</strong> to add EchoVera to your home screen</p>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
-        <div style="display:flex;align-items:center;gap:12px;background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:14px">
-          <div style="width:40px;height:40px;background:rgba(139,92,246,.15);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">1️⃣</div>
-          <div><div style="font-size:14px;font-weight:700;color:#f4f0ff;margin-bottom:2px">Tap the Share button</div><div style="font-size:12px;color:#9d9bc0">Look for <strong style="color:#f4f0ff">⬆</strong> at the bottom of Safari</div></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:14px">
-          <div style="width:40px;height:40px;background:rgba(139,92,246,.15);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">2️⃣</div>
-          <div><div style="font-size:14px;font-weight:700;color:#f4f0ff;margin-bottom:2px">Tap "Add to Home Screen"</div><div style="font-size:12px;color:#9d9bc0">Scroll down in the menu — it has a <strong style="color:#f4f0ff">+</strong> icon</div></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;background:#111118;border:1px solid #1e1e2e;border-radius:14px;padding:14px">
-          <div style="width:40px;height:40px;background:rgba(139,92,246,.15);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">3️⃣</div>
-          <div><div style="font-size:14px;font-weight:700;color:#f4f0ff;margin-bottom:2px">Tap "Add" in the top right</div><div style="font-size:12px;color:#9d9bc0">EchoVera icon appears on your home screen!</div></div>
+    <div style="background:#18181f;border:1px solid #2e2e45;border-radius:28px 28px 0 0;
+      padding:24px 20px calc(28px + env(safe-area-inset-bottom));width:100%;max-width:480px">
+      <div style="width:36px;height:4px;background:#2e2e45;border-radius:2px;margin:0 auto 20px"></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <img src="/icons/icon-96.png" style="width:56px;height:56px;border-radius:16px" onerror="this.style.display='none'">
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#f4f0ff">Install on iPhone</div>
+          <div style="font-size:13px;color:#9d9bc0;margin-top:2px">Open in Safari first</div>
         </div>
       </div>
-      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:12px;margin-bottom:20px;font-size:12px;color:#f59e0b;line-height:1.6">
-        ⚠️ <strong>Must use Safari</strong> — Chrome on iPhone doesn't support this. Open this page in Safari first.
+      <div style="background:#111118;border:1px solid #2e2e45;border-radius:16px;padding:16px;margin-bottom:14px">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#a78bfa;flex-shrink:0">1</div>
+            <div style="font-size:14px;color:#f4f0ff">Tap the <strong>Share ⬆</strong> button at the bottom of Safari</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#a78bfa;flex-shrink:0">2</div>
+            <div style="font-size:14px;color:#f4f0ff">Scroll down and tap <strong>"Add to Home Screen"</strong></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:28px;height:28px;background:rgba(139,92,246,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#a78bfa;flex-shrink:0">3</div>
+            <div style="font-size:14px;color:#f4f0ff">Tap <strong>Add</strong> — EchoVera icon appears on your home screen</div>
+          </div>
+        </div>
       </div>
-      <button onclick="document.getElementById('ios-guide').remove()" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;border-radius:14px;padding:15px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:16px;cursor:pointer">Got it! 👍</button>
+      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);
+        border-radius:12px;padding:12px;margin-bottom:16px;font-size:12px;color:#f59e0b;line-height:1.6">
+        ⚠️ Must be in <strong>Safari</strong> — not Chrome. iOS doesn't allow other browsers to install PWAs.
+      </div>
+      <button onclick="document.getElementById('ev-guide').remove()"
+        style="width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;
+        border-radius:14px;padding:14px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;
+        font-weight:700;font-size:16px;cursor:pointer">Got it!</button>
     </div>`
   m.addEventListener('click', e => { if (e.target === m) m.remove() })
   document.body.appendChild(m)
 }
 
-// ── Generic guide (desktop/unsupported) ────────────────────
-function showGenericGuide () {
-  document.getElementById('ios-guide')?.remove()
-  const m = document.createElement('div')
-  m.id = 'ios-guide'
-  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px'
-  m.innerHTML = `
-    <div style="background:#18181f;border:1px solid #2e2e45;border-radius:24px;padding:28px 24px;width:100%;max-width:440px">
-      <div style="text-align:center;margin-bottom:20px"><img src="/icons/icon-120.png" style="width:64px;height:64px;border-radius:16px" onerror="this.style.display='none'"></div>
-      <h3 style="font-size:20px;font-weight:800;text-align:center;margin-bottom:6px">Install EchoVera</h3>
-      <p style="font-size:14px;color:#9d9bc0;text-align:center;margin-bottom:20px;line-height:1.6">To install EchoVera as an app:</p>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">
-        <div style="background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:12px 14px;font-size:13px;color:#9d9bc0">
-          <strong style="color:#f4f0ff">Chrome/Edge on Android:</strong><br>Tap ⋮ menu → "Add to Home screen" or "Install app"
-        </div>
-        <div style="background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:12px 14px;font-size:13px;color:#9d9bc0">
-          <strong style="color:#f4f0ff">Chrome on desktop:</strong><br>Click the install icon (⊕) in the address bar
-        </div>
-        <div style="background:#111118;border:1px solid #1e1e2e;border-radius:12px;padding:12px 14px;font-size:13px;color:#9d9bc0">
-          <strong style="color:#f4f0ff">iPhone (Safari only):</strong><br>Tap Share ⬆ → "Add to Home Screen"
-        </div>
-      </div>
-      <button onclick="document.getElementById('ios-guide').remove()" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#7c3aed);border:none;border-radius:14px;padding:14px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:15px;cursor:pointer">Close</button>
-    </div>`
-  m.addEventListener('click', e => { if (e.target === m) m.remove() })
-  document.body.appendChild(m)
-}
-
-// ── Boot ───────────────────────────────────────────────────
+// ── Boot PWA logic ─────────────────────────────────────────
 ;(function initPWA () {
-  // Already running as installed PWA
   if (isStandalone()) {
-    localStorage.setItem('pwa-installed', '1')
-    console.log('[EchoVera] Running as installed PWA ✓')
+    localStorage.setItem('ev-installed', '1')
     return
   }
-
-  // iOS: show banner after a delay (no beforeinstallprompt on iOS/Safari)
-  if (isIOS()) {
-    const dismissed = localStorage.getItem('pwa-dismissed-time')
-    const recentlyDismissed = dismissed && Date.now() - parseInt(dismissed) < 7 * 24 * 60 * 60 * 1000
-    if (!recentlyDismissed && !localStorage.getItem('pwa-installed')) {
-      setTimeout(showPWABanner, 4000)
-    }
-  }
-
-  // Reset dismissed flag after 7 days
-  const t = localStorage.getItem('pwa-dismissed-time')
-  if (t && Date.now() - parseInt(t) > 7 * 24 * 60 * 60 * 1000) {
-    localStorage.removeItem('pwa-dismissed')
-    localStorage.removeItem('pwa-dismissed-time')
-    console.log('[EchoVera] PWA dismissed flag reset after 7 days')
+  // iOS: show banner after delay (Safari has no beforeinstallprompt)
+  if (isIOS() && !localStorage.getItem('ev-installed')) {
+    setTimeout(showPWABanner, 4000)
   }
 })()
 
-// ── Online / Offline ───────────────────────────────────────
+// ── Online / Offline indicators ────────────────────────────
 window.addEventListener('offline', () => {
   const b = document.getElementById('offline-bar')
   if (b) b.classList.add('show')
