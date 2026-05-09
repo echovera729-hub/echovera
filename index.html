@@ -23,50 +23,32 @@
 <!-- Favicon -->
 <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96.png">
 <link rel="icon" type="image/png" sizes="72x72" href="/icons/icon-72.png">
-<!-- Capture install prompt as early as possible - before ALL other scripts -->
+<!-- Capture install prompt before any other script runs -->
 <script>
 window.__pwaPrompt = null;
 
-// Aggressively clear all stale install flags on every load
-// These flags were blocking the install banner from ever showing again
-localStorage.removeItem('pwa-installed');
-localStorage.removeItem('pwa-dismissed');
-localStorage.removeItem('pwa-dismissed-time');
-
-// Check if genuinely already installed as PWA
-var _standalone = window.matchMedia('(display-mode: standalone)').matches
-  || window.navigator.standalone === true;
-if (_standalone) {
+// Mark as installed if running as PWA
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
   localStorage.setItem('ev-installed', '1');
-} else {
-  // Not installed - clear any stale ev-installed flag too
-  // (it may have been set incorrectly by a failed install attempt)
-  localStorage.removeItem('ev-installed');
 }
 
 window.addEventListener('beforeinstallprompt', function(e) {
   e.preventDefault();
   window.__pwaPrompt = e;
-  // Show banner instantly - no delay, no guards
-  if (typeof showPWABanner === 'function') {
-    showPWABanner();
-  } else {
-    // App not loaded yet - wait for it
-    var poll = setInterval(function() {
-      if (typeof showPWABanner === 'function') {
-        clearInterval(poll);
-        if (!_standalone) showPWABanner();
-      }
-    }, 100);
-    setTimeout(function() { clearInterval(poll); }, 10000);
-  }
+  var poll = setInterval(function() {
+    if (typeof showPWABanner === 'function') {
+      clearInterval(poll);
+      showPWABanner();
+    }
+  }, 100);
+  setTimeout(function() { clearInterval(poll); }, 15000);
 });
 
 window.addEventListener('appinstalled', function() {
   window.__pwaPrompt = null;
   localStorage.setItem('ev-installed', '1');
   if (typeof hidePWABanner === 'function') hidePWABanner();
-  if (typeof toast === 'function') toast('EchoVera installed! Open it from your app drawer 📱', 'ok');
+  if (typeof toast === 'function') toast('EchoVera installed! Open from your app drawer 📱', 'ok');
 });
 </script>
 <title>EchoVera</title>
@@ -686,7 +668,7 @@ let watchId = null, gpsState = 'acquiring', gpsTimer = null
 let activeTkCard = null
 let realtimeChan = null, msgChan = null
 const disTimers = {}  // keyed by msg id — lets us cancel disappear timers on delete
-const ADMIN_KEY = 'intsikbaboy1'
+const ADMIN_KEY = 'admin123'
 const THEMES = [
   {n:'violet',c:'#8b5cf6'},{n:'pink',c:'#ec4899'},{n:'cyan',c:'#06b6d4'},
   {n:'emerald',c:'#10b981'},{n:'amber',c:'#f59e0b'},{n:'rose',c:'#f43f5e'}
@@ -849,7 +831,7 @@ async function launch() {
   subscribeToMessages()
   // mark self as online
   await sb.from('users').update({ status: 'online' }).eq('id', CU.id)
-  toast('Welcome back, ' + CU.name.split(' ')[0] + '! 📡 Tracker live','ok')
+  toast('Welcome back, ' + CU.name.split(' ')[0] + '! 👋', 'ok')
 }
 
 async function loadUsers() {
@@ -1454,7 +1436,6 @@ function filterExplore(f){renderExplore(f)}
 function renderNotifs(){
   const l=el('nlist'); l.innerHTML=''
   const notifs=[
-    {ico:'📡',title:'Location tracking is live — positions auto-update',time:'Now'},
     {ico:'🔔',title:'Welcome to EchoVera! Invite friends to connect.',time:'Now'},
   ]
   notifs.forEach((n,i)=>{
