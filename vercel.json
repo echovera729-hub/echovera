@@ -32,5 +32,13 @@
         { "key": "X-Frame-Options",        "value": "SAMEORIGIN" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/sw.js",           "destination": "/sw.js" },
+    { "source": "/manifest.json",   "destination": "/manifest.json" },
+    { "source": "/install",         "destination": "/install.html" },
+    { "source": "/pwa-check",       "destination": "/pwa-check.html" },
+    { "source": "/icons/:file",     "destination": "/icons/:file" },
+    { "source": "/(.*)",            "destination": "/index.html" }
   ]
 }
