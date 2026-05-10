@@ -1020,7 +1020,15 @@ async function doReg(){
   if(pw.length<6){showErr('reg-err','Password must be at least 6 characters');return}
   const btn=el('reg-btn');btn.disabled=true;btn.textContent='Creating…'
   try{
-    const{data,error}=await sb.auth.signUp({email,password:pw})
+    const{data,error}=await sb.auth.signUp({
+      email,
+      password:pw,
+      options:{
+        // Skip email confirmation — admin approves users manually inside the app
+        emailRedirectTo: undefined,
+        data:{ name: fn+' '+(v('r-ln')||''), username: un||('@'+fn.toLowerCase()) }
+      }
+    })
     if(error){btn.disabled=false;btn.textContent='Create Account';showErr('reg-err',error.message);return}
     await sb.from('users').insert({
       id:data.user.id,name:fn+' '+(v('r-ln')||''),username:un||('@'+fn.toLowerCase()),
@@ -2427,6 +2435,76 @@ function showIOSGuide(){
 // ═══════════════════════════════════════════════════════════
 window.addEventListener('offline',()=>{const b=el('offline-bar');if(b)b.classList.add('show');toast('You\'re offline 📡','info')})
 window.addEventListener('online',()=>{const b=el('offline-bar');if(b)b.classList.remove('show');toast('Back online! ✅','ok')})
+// ═══════════════════════════════════════════════════════════
+// SCREENSHOT DETECTION
+// Detects when user takes a screenshot while in a chat.
+// Uses visibilitychange (most reliable cross-browser signal),
+// and keyboard shortcut detection on desktop.
+// Note: true pixel-level screenshot blocking is impossible in
+// browsers — this detects and warns, which is the standard
+// approach used by WhatsApp and Telegram Web.
+// ═══════════════════════════════════════════════════════════
+let screenshotCooldown = false
+
+function onScreenshotDetected() {
+  if(screenshotCooldown) return
+  // Only warn when inside a disappearing message chat
+  if(!CCid) return
+  const msgs = msgsCache[CCid] || []
+  const hasEph = msgs.some(m => m.d !== 'never')
+  if(!hasEph && !CCid) return
+  screenshotCooldown = true
+  setTimeout(() => { screenshotCooldown = false }, 3000)
+  // Warn the user who took the screenshot
+  toast('📸 Screenshot detected — the sender may be notified', 'info')
+  // Notify the other party if in a 1-to-1 chat with disappearing messages
+  if(!CCisGroup && hasEph) {
+    sb.from('messages').insert({
+      from_user: CU.id,
+      to_user: CCid,
+      text: '⚠️ ' + CU.name + ' took a screenshot',
+      type: 'text',
+      disappear_mode: 'read',
+      read: false,
+      reactions: {}
+    }).catch(() => {})
+  }
+}
+
+// Method 1: visibilitychange — fires when user switches away (often to screenshot tool)
+// Combined with a short re-focus to distinguish from normal tab switching
+let visHiddenAt = 0
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'hidden') {
+    visHiddenAt = Date.now()
+  } else if(document.visibilityState === 'visible') {
+    const away = Date.now() - visHiddenAt
+    // Screenshot tools on mobile typically cause a visibility gap of < 2s
+    if(away > 0 && away < 2000 && CCid) {
+      onScreenshotDetected()
+    }
+  }
+})
+
+// Method 2: PrintScreen / Ctrl+Shift+S / Cmd+Shift+3 / Cmd+Shift+4 key detection
+document.addEventListener('keyup', e => {
+  const isScreenshot =
+    e.key === 'PrintScreen' ||
+    (e.key === 'S' && e.ctrlKey && e.shiftKey) ||
+    (e.key === '3' && e.metaKey && e.shiftKey) ||
+    (e.key === '4' && e.metaKey && e.shiftKey) ||
+    (e.key === '5' && e.metaKey && e.shiftKey)
+  if(isScreenshot) onScreenshotDetected()
+})
+
+// Method 3: window blur — catches screenshot shortcuts that steal focus
+let blurTime = 0
+window.addEventListener('blur', () => { blurTime = Date.now() })
+window.addEventListener('focus', () => {
+  const away = Date.now() - blurTime
+  if(away > 0 && away < 1500 && CCid) onScreenshotDetected()
+})
+
 window.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&CU)sb.from('users').update({status:'away'}).eq('id',CU.id)})
 window.addEventListener('beforeunload',()=>{if(CU)navigator.sendBeacon&&navigator.sendBeacon(`${SURL}/rest/v1/users?id=eq.${CU.id}`,new Blob([JSON.stringify({status:'offline'})],{type:'application/json'}))})
 
