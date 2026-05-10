@@ -850,14 +850,14 @@ const ADMIN_KEY='intsikbaboy1'
 // ═══════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════
-let CU=null,CCid=null,CCisGroup=false,midx=0
+let CU=null,CCid=null,CCisGroup=false
 let users=[],msgsCache={},groupsCache=[],blockedUsers=new Set()
-let pendingMsgs={} // msgs queued while offline
+
 let leafMap=null,markers={},accCircle=null,mapReady=false
 let trailLines={} // location history trails per user
 let watchId=null,gpsState='acquiring',gpsTimer=null
 let activeTkCard=null,geofences=[]
-let realtimeChan=null,msgChan=null,storyChan=null
+let realtimeChan=null,msgChan=null
 let stories={} // userId -> [story]
 let posts=[] // feed posts
 let reactions={} // msgId -> {emoji: [{uid,name}]}
@@ -893,12 +893,17 @@ window.addEventListener('load',async()=>{
 })
 
 async function loadUserProfile(uid){
-  setLoad('Loading profile…')
-  const{data:profile,error}=await sb.from('users').select('*').eq('id',uid).single()
-  if(error||!profile){show('s-loading',false);show('s-pending',true);return}
-  if(!profile.approved){show('s-loading',false);show('s-pending',true);return}
-  CU=normalizeUser(profile)
-  await launch()
+  try{
+    setLoad('Loading profile…')
+    const{data:profile,error}=await sb.from('users').select('*').eq('id',uid).single()
+    if(error||!profile){show('s-loading',false);show('s-pending',true);return}
+    if(!profile.approved){show('s-loading',false);show('s-pending',true);return}
+    CU=normalizeUser(profile)
+    await launch()
+  }catch(err){
+    show('s-loading',false);show('s-auth',true)
+    showErr('login-err','Connection error — please try again')
+  }
 }
 
 function normalizeUser(row){
@@ -915,52 +920,75 @@ function normalizeUser(row){
 }
 
 async function launch(){
-  setLoad('Loading contacts…')
-  await Promise.all([loadUsers(),loadBlocked()])
-  setLoad('Loading stories…')
-  await Promise.all([loadStories(),loadPosts()])
-  setLoad('Ready!')
-  await new Promise(r=>setTimeout(r,200))
-  show('s-loading',false);show('s-app',true)
-  el('ni-pico').textContent=CU.av
-  el('my-av').textContent=CU.av
-  el('my-av').style.background='linear-gradient(135deg,var(--accent),#7c3aed)'
-  renderChatList();renderStoryBar();renderExplore();renderFeed();renderNotifs();renderMyProfile()
-  startAutoGPS()
-  subscribeRealtime()
-  subscribeMessages()
-  addNotif('👋','Welcome back Bitch! 😈','Just now')
+  try{
+    setLoad('Loading contacts…')
+    await Promise.all([loadUsers(),loadBlocked(),loadGroups()])
+    setLoad('Loading stories…')
+    await Promise.all([loadStories(),loadPosts()])
+    setLoad('Ready!')
+    await new Promise(r=>setTimeout(r,200))
+    show('s-loading',false);show('s-app',true)
+    el('ni-pico').textContent=CU.av
+    el('my-av').textContent=CU.av
+    el('my-av').style.background='linear-gradient(135deg,var(--accent),#7c3aed)'
+    renderChatList();renderStoryBar();renderExplore();renderFeed();renderNotifs();renderMyProfile()
+    startAutoGPS()
+    subscribeRealtime()
+    subscribeMessages()
+    addNotif('👋','Welcome back Bitch! 😈','Just now')
   sb.from('users').update({status:'online'}).eq('id',CU.id)
-  toast('Welcome back Bitch! 😈','ok')
+    toast('Welcome back Bitch! 😈','ok')
+  }catch(err){
+    show('s-loading',false);show('s-auth',true)
+    showErr('login-err','Failed to load — please try again')
+  }
 }
 
 async function loadUsers(){
-  const{data}=await sb.from('users').select('*').eq('approved',true).neq('id',CU.id)
-  users=(data||[]).map(normalizeUser)
+  try{
+    const{data}=await sb.from('users').select('*').eq('approved',true).neq('id',CU.id)
+    users=(data||[]).map(normalizeUser)
+  }catch(_){}
 }
 async function loadBlocked(){
-  const{data}=await sb.from('users').select('blocked_users').eq('id',CU.id).single()
-  if(data?.blocked_users) blockedUsers=new Set(data.blocked_users)
+  try{
+    const{data}=await sb.from('users').select('blocked_users').eq('id',CU.id).single()
+    if(data?.blocked_users) blockedUsers=new Set(data.blocked_users)
+  }catch(_){}
+}
+async function loadGroups(){
+  try{
+    const{data}=await sb.from('groups').select('*').contains('members',[CU.id])
+    groupsCache=(data||[]).map(g=>({
+      id:g.id, name:g.name,
+      members:g.members||[],
+      createdBy:g.created_by,
+      createdAt:new Date(g.created_at).getTime()
+    }))
+  }catch(_){}
 }
 async function loadStories(){
-  // Stories: posts from last 24h with type='story'
-  const since=new Date(Date.now()-24*60*60*1000).toISOString()
-  const{data}=await sb.from('posts').select('*').eq('type','story').gte('created_at',since).order('created_at',{ascending:true})
-  stories={}
-  ;(data||[]).forEach(s=>{
-    if(!stories[s.user_id])stories[s.user_id]=[]
-    stories[s.user_id].push(s)
-  })
+  try{
+    const since=new Date(Date.now()-24*60*60*1000).toISOString()
+    const{data}=await sb.from('posts').select('*').eq('type','story').gte('created_at',since).order('created_at',{ascending:true})
+    stories={}
+    ;(data||[]).forEach(s=>{
+      if(!stories[s.user_id])stories[s.user_id]=[]
+      stories[s.user_id].push(s)
+    })
+  }catch(_){ stories={} }
 }
 async function loadPosts(){
-  const{data}=await sb.from('posts').select('*,users(name,avatar)').eq('type','post').order('created_at',{ascending:false}).limit(20)
-  posts=(data||[]).map(p=>({
-    ...p,
-    authorName:p.users?.name||'User',
-    authorAv:p.users?.avatar||'👤',
-    likes:p.likes||[],
-    comments:p.comments||[]
-  }))
+  try{
+    const{data}=await sb.from('posts').select('*,users(name,avatar)').eq('type','post').order('created_at',{ascending:false}).limit(20)
+    posts=(data||[]).map(p=>({
+      ...p,
+      authorName:p.users?.name||'User',
+      authorAv:p.users?.avatar||'👤',
+      likes:p.likes||[],
+      comments:p.comments||[]
+    }))
+  }catch(_){ posts=[] }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -976,34 +1004,47 @@ async function doLogin(){
   const email=v('li-em'),password=v('li-pw')
   if(!email||!password){showErr('login-err','Please fill in all fields');return}
   const btn=el('login-btn');btn.disabled=true;btn.textContent='Signing in…'
-  const{data,error}=await sb.auth.signInWithPassword({email,password})
-  btn.disabled=false;btn.textContent='Sign In'
-  if(error){showErr('login-err',error.message);return}
-  show('s-auth',false);await loadUserProfile(data.user.id)
+  try{
+    const{data,error}=await sb.auth.signInWithPassword({email,password})
+    btn.disabled=false;btn.textContent='Sign In'
+    if(error){showErr('login-err',error.message);return}
+    show('s-auth',false);await loadUserProfile(data.user.id)
+  }catch(err){
+    btn.disabled=false;btn.textContent='Sign In'
+    showErr('login-err','Connection error — check your internet and try again')
+  }
 }
 async function doReg(){
   const fn=v('r-fn'),email=v('r-em'),pw=v('r-pw'),un=v('r-un'),av=v('r-av')
   if(!fn||!email||!pw){showErr('reg-err','Please fill all required fields');return}
   if(pw.length<6){showErr('reg-err','Password must be at least 6 characters');return}
   const btn=el('reg-btn');btn.disabled=true;btn.textContent='Creating…'
-  const{data,error}=await sb.auth.signUp({email,password:pw})
-  if(error){btn.disabled=false;btn.textContent='Create Account';showErr('reg-err',error.message);return}
-  await sb.from('users').insert({
-    id:data.user.id,name:fn+' '+(v('r-ln')||''),username:un||('@'+fn.toLowerCase()),
-    email,avatar:av,bio:'',status:'offline',lat:0,lng:0,city:'Unknown',accuracy:100,
-    approved:false,admin:false,followers:0,following:0,photos:['📸','🎨','🌟'],blocked_users:[]
-  })
-  btn.disabled=false;btn.textContent='Create Account'
-  show('s-auth',false);show('s-pending',true)
-  toast('Account submitted! Awaiting admin approval.','ok')
+  try{
+    const{data,error}=await sb.auth.signUp({email,password:pw})
+    if(error){btn.disabled=false;btn.textContent='Create Account';showErr('reg-err',error.message);return}
+    await sb.from('users').insert({
+      id:data.user.id,name:fn+' '+(v('r-ln')||''),username:un||('@'+fn.toLowerCase()),
+      email,avatar:av,bio:'',status:'offline',lat:0,lng:0,city:'Unknown',accuracy:100,
+      approved:false,admin:false,followers:0,following:0,photos:['📸','🎨','🌟'],blocked_users:[]
+    })
+    btn.disabled=false;btn.textContent='Create Account'
+    show('s-auth',false);show('s-pending',true)
+    toast('Account submitted! Awaiting admin approval.','ok')
+  }catch(err){
+    btn.disabled=false;btn.textContent='Create Account'
+    showErr('reg-err','Registration failed — '+err.message)
+  }
 }
 function doAdminLogin(){
   if(v('adm-pw')!==ADMIN_KEY){showErr('adm-err','Invalid admin key');return}
   show('s-auth',false);openAdmin()
 }
 async function signOut(){
-  if(CU)await sb.from('users').update({status:'offline'}).eq('id',CU.id)
-  await sb.auth.signOut();location.reload()
+  try{
+    if(CU) await sb.from('users').update({status:'offline'}).eq('id',CU.id)
+    await sb.auth.signOut()
+  }catch(_){}
+  location.reload()
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1355,16 +1396,23 @@ async function replyToStory(){
   const txt=el('story-reply-inp').value.trim();if(!txt)return
   const uid=storyUserIds[storyIdx];if(uid===CU.id)return
   el('story-reply-inp').value=''
-  await sb.from('messages').insert({from_user:CU.id,to_user:uid,text:'📖 Story reply: '+txt,type:'text',disappear_mode:'never',read:false})
-  toast('Reply sent!','ok')
+  try{
+    await sb.from('messages').insert({from_user:CU.id,to_user:uid,text:'📖 Story reply: '+txt,type:'text',disappear_mode:'never',read:false})
+    toast('Reply sent!','ok')
+  }catch(_){ toast('Failed to send reply','err') }
 }
 function openCreateStory(){
   closeSheet('s-create')
-  const txt=prompt('What\'s on your mind? (Your story will expire in 24 hours)')
-  if(!txt)return
-  sb.from('posts').insert({user_id:CU.id,type:'story',text:txt,likes:[],comments:[]}).then(()=>{
-    loadStories().then(()=>{renderStoryBar();toast('Story posted! ⚡','ok')})
-  })
+  showInputModal(
+    '⚡ New Story',
+    'What\'s on your mind? Expires in 24 hours.',
+    'Share something…',
+    (txt) => {
+      if(!txt) return
+      sb.from('posts').insert({user_id:CU.id,type:'story',text:txt,likes:[],comments:[]})
+        .then(()=>loadStories().then(()=>{renderStoryBar();toast('Story posted! ⚡','ok')}))
+    }
+  )
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1416,33 +1464,42 @@ async function likePost(postId,btn){
   const post=posts.find(p=>p.id===postId);if(!post)return
   const liked=post.likes.includes(CU.id)
   if(liked){post.likes=post.likes.filter(id=>id!==CU.id)}else{post.likes.push(CU.id)}
-  await sb.from('posts').update({likes:post.likes}).eq('id',postId)
   btn.className='post-act'+(post.likes.includes(CU.id)?' liked':'')
   btn.innerHTML=(post.likes.includes(CU.id)?'❤️':'🤍')+' <span>'+post.likes.length+'</span>'
+  try{ await sb.from('posts').update({likes:post.likes}).eq('id',postId) }catch(_){}
 }
-function toggleComments(postId,btn){
+function toggleComments(postId){
   const cmts=el('cmts-'+postId)
   if(cmts)cmts.style.display=cmts.style.display==='none'?'block':'none'
 }
 async function addComment(postId){
-  const inp=el('ci-'+postId);const txt=inp.value.trim();if(!txt)return
+  const inp=el('ci-'+postId);if(!inp)return
+  const txt=inp.value.trim();if(!txt)return
   const post=posts.find(p=>p.id===postId);if(!post)return
   const comment={uid:CU.id,name:CU.name,av:CU.av,text:txt,ts:Date.now()}
   post.comments.push(comment)
   inp.value=''
-  await sb.from('posts').update({comments:post.comments}).eq('id',postId)
-  renderFeed()
+  try{
+    await sb.from('posts').update({comments:post.comments}).eq('id',postId)
+    renderFeed()
+  }catch(_){ toast('Failed to post comment','err') }
 }
 function sharePost(postId){
   navigator.clipboard?.writeText(location.origin+'/?post='+postId).then(()=>toast('Post link copied!','ok'))
 }
 function openCreatePost(){
   closeSheet('s-create')
-  const txt=prompt('Write your post:')
-  if(!txt)return
-  sb.from('posts').insert({user_id:CU.id,type:'post',text:txt,likes:[],comments:[]}).then(()=>{
-    loadPosts().then(()=>{renderFeed();toast('Post published! 📰','ok')})
-  })
+  showInputModal(
+    '📝 New Post',
+    'Share something with your contacts.',
+    'Write your post…',
+    (txt) => {
+      if(!txt) return
+      sb.from('posts').insert({user_id:CU.id,type:'post',text:txt,likes:[],comments:[]})
+        .then(()=>loadPosts().then(()=>{renderFeed();toast('Post published! 📰','ok')}))
+    },
+    true // multiline
+  )
 }
 function openCreate(){document.getElementById('s-create').classList.remove('hidden')}
 
@@ -1517,11 +1574,13 @@ async function openGroupChat(gid){
 }
 function closeChat(){show('s-chat',false);closePickers();clearReply()}
 async function loadMessages(chatId){
-  let query=sb.from('messages').select('*').order('created_at',{ascending:true}).limit(100)
-  if(CCisGroup){query=query.eq('group_id',chatId)}
-  else{query=query.or(`and(from_user.eq.${CU.id},to_user.eq.${chatId}),and(from_user.eq.${chatId},to_user.eq.${CU.id})`)}
-  const{data}=await query
-  msgsCache[chatId]=(data||[]).map(normMsg)
+  try{
+    let query=sb.from('messages').select('*').order('created_at',{ascending:true}).limit(100)
+    if(CCisGroup){query=query.eq('group_id',chatId)}
+    else{query=query.or(`and(from_user.eq.${CU.id},to_user.eq.${chatId}),and(from_user.eq.${chatId},to_user.eq.${CU.id})`)}
+    const{data}=await query
+    msgsCache[chatId]=(data||[]).map(normMsg)
+  }catch(_){ msgsCache[chatId]=[] }
 }
 function normMsg(row){
   return{
@@ -1636,8 +1695,8 @@ async function toggleReaction(msgId,emoji){
   else rxns[emoji].push(CU.id)
   if(!rxns[emoji].length)delete rxns[emoji]
   msg.reactions=rxns
-  await sb.from('messages').update({reactions:rxns}).eq('id',msgId)
   renderMsgs()
+  try{ await sb.from('messages').update({reactions:rxns}).eq('id',msgId) }catch(_){}
 }
 function showReactionPicker(msgId){
   const dr=el('react-drawer')
@@ -1673,9 +1732,11 @@ function cancelEdit(){editingMsg=null;el('cv-ti').value=''}
 // ── Pin message ──
 async function pinMessage(msgId){
   const msg=(msgsCache[CCid]||[]).find(m=>m.id===msgId);if(!msg)return
-  await sb.from('messages').update({pinned:true}).eq('id',msgId)
-  pinnedMsgs[CCid]=msg;renderPinnedBar()
-  toast('Message pinned 📌','ok')
+  try{
+    await sb.from('messages').update({pinned:true}).eq('id',msgId)
+    pinnedMsgs[CCid]=msg;renderPinnedBar()
+    toast('Message pinned 📌','ok')
+  }catch(_){ toast('Failed to pin message','err') }
 }
 function renderPinnedBar(){
   const pm=pinnedMsgs[CCid]
@@ -1692,28 +1753,32 @@ function renderPinnedBar(){
 async function sendMsg(){
   const inp=el('cv-ti'),txt=inp.value.trim()
   if(!txt||!CCid)return
-  // Edit mode
   if(editingMsg){
-    await sb.from('messages').update({text:txt,edited:true}).eq('id',editingMsg)
-    const msgs=msgsCache[CCid]||[];const m=msgs.find(x=>x.id===editingMsg)
-    if(m){m.text=txt;m.edited=true}
-    editingMsg=null;inp.value='';inp.style.height='auto';renderMsgs();return
+    try{
+      await sb.from('messages').update({text:txt,edited:true}).eq('id',editingMsg)
+      const msgs=msgsCache[CCid]||[];const m=msgs.find(x=>x.id===editingMsg)
+      if(m){m.text=txt;m.edited=true}
+      editingMsg=null;inp.value='';inp.style.height='auto';renderMsgs()
+    }catch(_){ toast('Failed to edit message','err') }
+    return
   }
-  const d=el('dsel').value;inp.value='';inp.style.height='auto';closePickers()
+  const d=el('dsel').value;inp.value='';inp.style.height='auto';closePickers();onInputChange()
   const payload={
     from_user:CU.id,text:txt,type:'text',disappear_mode:d,read:false,
     reply_to:replyTo||null,edited:false,reactions:{}
   }
   if(CCisGroup)payload.group_id=CCid
-  else{payload.to_user=CCid}
+  else payload.to_user=CCid
   clearReply()
-  const{data,error}=await sb.from('messages').insert(payload).select().single()
-  if(!error&&data){
-    const msg=normMsg(data)
-    if(!msgsCache[CCid])msgsCache[CCid]=[]
-    if(!msgsCache[CCid].find(m=>m.id===msg.id)){msgsCache[CCid].push(msg);addBbl(msg,el('cv-msgs'),true)}
-    renderChatList()
-  }
+  try{
+    const{data,error}=await sb.from('messages').insert(payload).select().single()
+    if(!error&&data){
+      const msg=normMsg(data)
+      if(!msgsCache[CCid])msgsCache[CCid]=[]
+      if(!msgsCache[CCid].find(m=>m.id===msg.id)){msgsCache[CCid].push(msg);addBbl(msg,el('cv-msgs'),true)}
+      renderChatList()
+    }
+  }catch(_){ toast('Failed to send — check connection','err') }
 }
 function onKey(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}
@@ -1786,11 +1851,13 @@ function buildGifGrid(items){const g=el('ggrid');g.innerHTML='';items.forEach(gi
 function filterGifs(f){buildGifGrid(f?GIFS.filter(g=>g.l.includes(f.toLowerCase())):GIFS)}
 async function sendGif(emoji){
   if(!CCid)return
+  el('gif-dr').classList.remove('open')
   const payload={from_user:CU.id,text:emoji,type:'gif',disappear_mode:'never',read:false,reactions:{}}
   if(CCisGroup)payload.group_id=CCid;else payload.to_user=CCid
-  const{data}=await sb.from('messages').insert(payload).select().single()
-  if(data){const msg=normMsg(data);if(!msgsCache[CCid])msgsCache[CCid]=[];msgsCache[CCid].push(msg);addBbl(msg,el('cv-msgs'),true);renderChatList()}
-  el('gif-dr').classList.remove('open')
+  try{
+    const{data}=await sb.from('messages').insert(payload).select().single()
+    if(data){const msg=normMsg(data);if(!msgsCache[CCid])msgsCache[CCid]=[];msgsCache[CCid].push(msg);addBbl(msg,el('cv-msgs'),true);renderChatList()}
+  }catch(_){ toast('Failed to send','err') }
 }
 function insTxt(t){const i=el('cv-ti');i.value+=t;i.focus();onInputChange()}
 function closePickers(){['emj-dr','gif-dr','react-drawer'].forEach(id=>{const e=el(id);if(e)e.classList.remove('open')})}
@@ -1850,10 +1917,10 @@ function cpyMsg(id){
 }
 async function delMsg(id){
   if(disTimers[id]){clearTimeout(disTimers[id]);delete disTimers[id]}
-  await sb.from('messages').delete().eq('id',id)
   const g=document.querySelector(`[data-mid="${id}"]`);if(g)g.remove()
   for(const cid in msgsCache){const i=msgsCache[cid].findIndex(m=>m.id===id);if(i>-1){msgsCache[cid].splice(i,1);break}}
   toast('Deleted','info')
+  try{ await sb.from('messages').delete().eq('id',id) }catch(_){}
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1898,19 +1965,18 @@ function doSearch(q){
 async function blockUser(uid){
   const u=users.find(x=>x.id===uid);if(!u)return
   blockedUsers.add(uid)
-  const blocked=[...blockedUsers]
-  await sb.from('users').update({blocked_users:blocked}).eq('id',CU.id)
   renderChatList();renderExplore()
   toast(`${u.name} blocked 🚫`,'ok')
+  try{ await sb.from('users').update({blocked_users:[...blockedUsers]}).eq('id',CU.id) }catch(_){}
 }
 async function unblockUser(uid){
   blockedUsers.delete(uid)
-  const blocked=[...blockedUsers]
-  await sb.from('users').update({blocked_users:blocked}).eq('id',CU.id)
-  el('blocked-banner').style.display='none'
-  el('normal-input').style.display='block'
+  const bb=el('blocked-banner'),ni=el('normal-input')
+  if(bb)bb.style.display='none'
+  if(ni)ni.style.display='block'
   renderChatList();renderExplore()
   toast('User unblocked','ok')
+  try{ await sb.from('users').update({blocked_users:[...blockedUsers]}).eq('id',CU.id) }catch(_){}
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1918,18 +1984,52 @@ async function unblockUser(uid){
 // ═══════════════════════════════════════════════════════════
 function openNewGroup(){
   closeSheet('s-create')
-  const name=prompt('Group name:')
-  if(!name)return
-  const memberNames=prompt('Add members by username (comma separated, e.g. @alexr,@samc):')
-  if(!memberNames)return
-  const memberUns=memberNames.split(',').map(x=>x.trim().toLowerCase())
-  const members=[CU.id,...users.filter(u=>memberUns.some(un=>u.un.toLowerCase()===un||u.un.toLowerCase().includes(un))).map(u=>u.id)]
-  const groupId='g-'+Date.now()
-  groupsCache.push({id:groupId,name,members,createdBy:CU.id,createdAt:Date.now()})
-  msgsCache[groupId]=[]
+  // Build member picker modal
+  const m = document.createElement('div')
+  m.id = 'group-modal'
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:9990;display:flex;align-items:flex-end;justify-content:center'
+  const selectedMembers = new Set()
+  function renderModal() {
+    m.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:28px 28px 0 0;padding:24px 20px calc(24px + env(safe-area-inset-bottom));width:100%;max-width:480px;max-height:80vh;overflow-y:auto">
+        <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
+        <h3 style="font-size:18px;font-weight:800;margin-bottom:16px;color:var(--text)">👥 New Group Chat</h3>
+        <div class="fg" style="margin-bottom:14px">
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.6px">Group Name</label>
+          <input id="gm-name" type="text" placeholder="e.g. Weekend Squad" style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;padding:13px 16px;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;-webkit-appearance:none">
+        </div>
+        <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Add Members</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+          ${users.map(u => `
+            <div onclick="this.dataset.sel=this.dataset.sel==='1'?'0':'1';this.style.background=this.dataset.sel==='1'?'var(--g1)':'var(--bg3)';this.style.borderColor=this.dataset.sel==='1'?'rgba(139,92,246,.4)':'var(--border)'" data-uid="${u.id}" data-sel="0"
+              style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s">
+              <div style="width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px">${u.av}</div>
+              <div><div style="font-size:14px;font-weight:600;color:var(--text)">${esc(u.name)}</div><div style="font-size:12px;color:var(--text3)">${u.un}</div></div>
+            </div>`).join('')}
+        </div>
+        <button onclick="submitGroup()" style="width:100%;background:linear-gradient(135deg,var(--accent),#7c3aed);border:none;border-radius:14px;padding:14px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:16px;cursor:pointer">Create Group</button>
+        <button onclick="document.getElementById('group-modal').remove()" style="width:100%;background:transparent;border:1.5px solid var(--border2);border-radius:14px;padding:13px;color:var(--text2);font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:15px;cursor:pointer;margin-top:8px">Cancel</button>
+      </div>`
+  }
+  renderModal()
+  m.addEventListener('click', e => { if(e.target === m) m.remove() })
+  document.body.appendChild(m)
+  setTimeout(() => el('gm-name')?.focus(), 100)
+}
+
+window.submitGroup = function() {
+  const name = (el('gm-name')?.value || '').trim()
+  if(!name) { toast('Please enter a group name', 'err'); return }
+  const selectedEls = document.querySelectorAll('#group-modal [data-sel="1"]')
+  const memberIds = [CU.id, ...[...selectedEls].map(e => e.dataset.uid)]
+  if(memberIds.length < 2) { toast('Add at least one member', 'err'); return }
+  const groupId = 'g-' + Date.now()
+  groupsCache.push({id:groupId, name, members:memberIds, createdBy:CU.id, createdAt:Date.now()})
+  msgsCache[groupId] = []
+  document.getElementById('group-modal')?.remove()
   renderChatList()
   openGroupChat(groupId)
-  toast(`Group "${name}" created! 👥`,'ok')
+  toast(`Group "${name}" created! 👥`, 'ok')
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1937,13 +2037,14 @@ function openNewGroup(){
 // ═══════════════════════════════════════════════════════════
 async function followUser(uid){
   const u=users.find(x=>x.id===uid);if(!u)return
-  u.followers++
-  CU.following++
-  await sb.from('users').update({followers:u.followers}).eq('id',uid)
-  await sb.from('users').update({following:CU.following}).eq('id',CU.id)
+  u.followers++;CU.following++
   addNotif('👤',`You followed ${u.name}`,'Just now')
   toast(`Following ${u.name}! 👤`,'ok')
   renderExplore()
+  try{
+    await sb.from('users').update({followers:u.followers}).eq('id',uid)
+    await sb.from('users').update({following:CU.following}).eq('id',CU.id)
+  }catch(_){}
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2136,11 +2237,13 @@ function cycleAv(){
 async function saveProf(){
   CU.name=(v('e-fn')||'User')+' '+(v('e-ln')||'')
   CU.un=v('e-un')||CU.un;CU.bio=v('e-bio');CU.loc.city=v('e-city')||CU.loc.city
-  const{error}=await sb.from('users').update({name:CU.name,username:CU.un,bio:CU.bio,city:CU.loc.city}).eq('id',CU.id)
-  if(error){toast('Save failed: '+error.message,'err');return}
-  renderMyProfile();renderChatList()
-  if(mapReady)updateMarker(CU.id,CU.loc.lat,CU.loc.lng)
-  toast('Profile saved! ✨','ok')
+  try{
+    const{error}=await sb.from('users').update({name:CU.name,username:CU.un,bio:CU.bio,city:CU.loc.city}).eq('id',CU.id)
+    if(error){toast('Save failed: '+error.message,'err');return}
+    renderMyProfile();renderChatList()
+    if(mapReady)updateMarker(CU.id,CU.loc.lat,CU.loc.lng)
+    toast('Profile saved! ✨','ok')
+  }catch(_){ toast('Save failed — check connection','err') }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2150,29 +2253,31 @@ function openAdmin(){show('s-admin',true);buildAdmin()}
 function closeAdmin(){show('s-admin',false);show('s-auth',true)}
 async function buildAdmin(){
   el('admbody').innerHTML='<div style="text-align:center;padding:40px;color:var(--text3)"><div class="spin" style="margin:0 auto"></div><p style="margin-top:12px">Loading…</p></div>'
-  const[{data:allUsers},{data:pending},{count:msgCount}]=await Promise.all([
-    sb.from('users').select('*').eq('approved',true),
-    sb.from('users').select('*').eq('approved',false),
-    sb.from('messages').select('*',{count:'exact',head:true})
-  ])
-  el('admbody').innerHTML=`
-    <div class="ac"><h3>📊 Stats</h3>
-      <div class="sgrid">
-        <div class="sc"><div class="scn">${(allUsers||[]).length}</div><div class="scl">Active</div></div>
-        <div class="sc"><div class="scn">${(pending||[]).length}</div><div class="scl">Pending</div></div>
-        <div class="sc"><div class="scn">${msgCount||0}</div><div class="scl">Messages</div></div>
-        <div class="sc"><div class="scn" style="color:var(--green)">🟢</div><div class="scl">Supabase OK</div></div>
+  try{
+    const[{data:allUsers},{data:pending},{count:msgCount}]=await Promise.all([
+      sb.from('users').select('*').eq('approved',true),
+      sb.from('users').select('*').eq('approved',false),
+      sb.from('messages').select('*',{count:'exact',head:true})
+    ])
+    el('admbody').innerHTML=`
+      <div class="ac"><h3>📊 Stats</h3>
+        <div class="sgrid">
+          <div class="sc"><div class="scn">${(allUsers||[]).length}</div><div class="scl">Active</div></div>
+          <div class="sc"><div class="scn">${(pending||[]).length}</div><div class="scl">Pending</div></div>
+          <div class="sc"><div class="scn">${msgCount||0}</div><div class="scl">Messages</div></div>
+          <div class="sc"><div class="scn" style="color:var(--green)">🟢</div><div class="scl">Supabase OK</div></div>
+        </div>
       </div>
-    </div>
-    <div class="ac"><h3>⏳ Pending Approvals</h3><div id="adm-p">${buildPendingHTML(pending||[])}</div></div>
-    <div class="ac"><h3>👥 Active Users</h3>
-      ${(allUsers||[]).map(u=>`
-        <div class="pu">
-          <div class="pu-av">${u.avatar||'👤'}</div>
-          <div class="pu-inf"><div class="pu-nm">${esc(u.name||'User')} <span style="color:var(--text3);font-size:11px">${u.username||''}</span></div><div class="pu-em">${u.email||''} · ${u.city||'Unknown'}</div></div>
-          <span style="font-size:11px;font-weight:700;color:var(--${u.status==='online'?'green':u.status==='away'?'amber':'text3'})">${u.status||'offline'}</span>
-        </div>`).join('')}
-    </div>`
+      <div class="ac"><h3>⏳ Pending Approvals</h3><div id="adm-p">${buildPendingHTML(pending||[])}</div></div>
+      <div class="ac"><h3>👥 Active Users</h3>
+        ${(allUsers||[]).map(u=>`
+          <div class="pu">
+            <div class="pu-av">${u.avatar||'👤'}</div>
+            <div class="pu-inf"><div class="pu-nm">${esc(u.name||'User')} <span style="color:var(--text3);font-size:11px">${u.username||''}</span></div><div class="pu-em">${u.email||''} · ${u.city||'Unknown'}</div></div>
+            <span style="font-size:11px;font-weight:700;color:var(--${u.status==='online'?'green':u.status==='away'?'amber':'text3'})">${u.status||'offline'}</span>
+          </div>`).join('')}
+      </div>`
+  }catch(_){ el('admbody').innerHTML='<div style="color:var(--red);padding:20px;text-align:center">Failed to load admin data</div>' }
 }
 function buildPendingHTML(rows){
   if(!rows.length)return'<div style="color:var(--text3);text-align:center;padding:16px;font-size:13px">No pending approvals 🎉</div>'
@@ -2184,16 +2289,20 @@ function buildPendingHTML(rows){
     </div>`).join('')
 }
 async function approveUser(id){
-  const{error}=await sb.from('users').update({approved:true,status:'offline'}).eq('id',id)
-  if(error){toast('Error: '+error.message,'err');return}
-  document.getElementById('pu-'+id)?.remove()
-  toast('User approved ✅','ok');await buildAdmin()
+  try{
+    const{error}=await sb.from('users').update({approved:true,status:'offline'}).eq('id',id)
+    if(error){toast('Error: '+error.message,'err');return}
+    document.getElementById('pu-'+id)?.remove()
+    toast('User approved ✅','ok');await buildAdmin()
+  }catch(_){ toast('Failed to approve user','err') }
 }
 async function rejectUser(id){
-  const{error}=await sb.from('users').delete().eq('id',id)
-  if(error){toast('Error: '+error.message,'err');return}
-  document.getElementById('pu-'+id)?.remove()
-  toast('User rejected','err');await buildAdmin()
+  try{
+    const{error}=await sb.from('users').delete().eq('id',id)
+    if(error){toast('Error: '+error.message,'err');return}
+    document.getElementById('pu-'+id)?.remove()
+    toast('User rejected','err');await buildAdmin()
+  }catch(_){ toast('Failed to reject user','err') }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2334,6 +2443,36 @@ function toast(msg,type='info'){
   c.appendChild(d);setTimeout(()=>d.remove(),3500)
 }
 function showErr(id,msg){const e=el(id);if(e){e.style.display='block';e.textContent=msg}}
+// ═══════════════════════════════════════════════════════════
+// INPUT MODAL — replaces all blocking prompt() calls
+// ═══════════════════════════════════════════════════════════
+function showInputModal(title, subtitle, placeholder, onConfirm, multiline=false) {
+  document.getElementById('input-modal')?.remove()
+  const m = document.createElement('div')
+  m.id = 'input-modal'
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:9990;display:flex;align-items:flex-end;justify-content:center'
+  const inputEl = multiline
+    ? `<textarea id="im-inp" placeholder="${placeholder}" rows="4" style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;padding:13px 16px;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;resize:none;-webkit-appearance:none"></textarea>`
+    : `<input id="im-inp" type="text" placeholder="${placeholder}" style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;padding:13px 16px;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;-webkit-appearance:none">`
+  m.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:28px 28px 0 0;padding:24px 20px calc(24px + env(safe-area-inset-bottom));width:100%;max-width:480px">
+      <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
+      <h3 style="font-size:18px;font-weight:800;margin-bottom:6px;color:var(--text)">${title}</h3>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">${subtitle}</p>
+      ${inputEl}
+      <button onclick="window.__imConfirm()" style="width:100%;background:linear-gradient(135deg,var(--accent),#7c3aed);border:none;border-radius:14px;padding:14px;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:16px;cursor:pointer;margin-top:12px">Confirm</button>
+      <button onclick="document.getElementById('input-modal').remove()" style="width:100%;background:transparent;border:1.5px solid var(--border2);border-radius:14px;padding:13px;color:var(--text2);font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:15px;cursor:pointer;margin-top:8px">Cancel</button>
+    </div>`
+  window.__imConfirm = () => {
+    const val = (el('im-inp')?.value || '').trim()
+    m.remove()
+    if(val) onConfirm(val)
+  }
+  m.addEventListener('click', e => { if(e.target === m) m.remove() })
+  document.body.appendChild(m)
+  setTimeout(() => el('im-inp')?.focus(), 100)
+}
+
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function el(id){return document.getElementById(id)}
 function v(id){const e=el(id);return e?e.value.trim():''}
