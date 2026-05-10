@@ -2262,16 +2262,18 @@ function closeAdmin(){show('s-admin',false);show('s-auth',true)}
 async function buildAdmin(){
   el('admbody').innerHTML='<div style="text-align:center;padding:40px;color:var(--text3)"><div class="spin" style="margin:0 auto"></div><p style="margin-top:12px">Loading…</p></div>'
   try{
-    const[{data:allUsers},{data:pending},{count:msgCount}]=await Promise.all([
-      sb.from('users').select('*').eq('approved',true),
-      sb.from('users').select('*').eq('approved',false),
+    // Fetch ALL users in one query — RLS now allows admin to see pending rows
+    const [{data:allData},{count:msgCount}]=await Promise.all([
+      sb.from('users').select('*').order('created_at',{ascending:false}),
       sb.from('messages').select('*',{count:'exact',head:true})
     ])
+    const allUsers=(allData||[]).filter(u=>u.approved===true)
+    const pending=(allData||[]).filter(u=>u.approved===false)
     el('admbody').innerHTML=`
       <div class="ac"><h3>📊 Stats</h3>
         <div class="sgrid">
-          <div class="sc"><div class="scn">${(allUsers||[]).length}</div><div class="scl">Active</div></div>
-          <div class="sc"><div class="scn">${(pending||[]).length}</div><div class="scl">Pending</div></div>
+          <div class="sc"><div class="scn">${allUsers.length}</div><div class="scl">Active</div></div>
+          <div class="sc"><div class="scn">${pending.length}</div><div class="scl">Pending</div></div>
           <div class="sc"><div class="scn">${msgCount||0}</div><div class="scl">Messages</div></div>
           <div class="sc"><div class="scn" style="color:var(--green)">🟢</div><div class="scl">Supabase OK</div></div>
         </div>
